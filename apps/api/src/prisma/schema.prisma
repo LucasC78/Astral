@@ -1,0 +1,24 @@
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Tool {
+  id            Int      @id @default(autoincrement())
+  slug          String   @unique
+  name          String
+  description   String
+  websiteUrl    String
+  countryCode   String
+  category      String
+  hostingRegion String
+  gdprLevel     String
+  isOpenSource  Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  logoUrl String?
+  tags    String[] @default([])
+}

@@ -1,0 +1,28 @@
+[
+  {
+    "slug": "ovh",
+    "name": "OVHcloud",
+    "description": "Hebergeur europeen",
+    "websiteUrl": "https://www.ovhcloud.com",
+    "countryCode": "FR",
+    "category": "Cloud",
+    "hostingRegion": "EU",
+    "gdprLevel": "strong",
+    "isOpenSource": false,
+    "logoUrl": "https://www.ovhcloud.com/favicon.ico",
+    "tags": ["cloud", "hosting", "infrastructure"]
+  },
+  {
+    "slug": "scaleway",
+    "name": "Scaleway",
+    "description": "Hebergeur europeen",
+    "websiteUrl": "https://www.scaleway.com",
+    "countryCode": "FR",
+    "category": "Cloud",
+    "hostingRegion": "EU",
+    "gdprLevel": "strong",
+    "isOpenSource": false,
+    "logoUrl": "https://www.scaleway.com/favicon.ico",
+    "tags": ["cloud", "hosting", "compute"]
+  }
+]
