@@ -1,16 +1,63 @@
-# dependencies
-/node_modules
-**/node_modules
-
-# build
-.next/
-dist/
-**/dist/
-build/
-
-# env files
+# =========================
+# ENV
+# =========================
 .env
 .env.*
 **/.env
 **/.env.*
-.env.local
+
+# =========================
+# DEPENDENCIES
+# =========================
+node_modules/
+**/node_modules/
+
+# =========================
+# BUILD OUTPUT
+# =========================
+dist/
+**/dist/
+build/
+.next/
+out/
+
+# =========================
+# LOGS
+# =========================
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# =========================
+# OS FILES
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# TYPESCRIPT
+# =========================
+*.tsbuildinfo
+
+# =========================
+# VERCEL
+# =========================
+.vercel
+
+# =========================
+# IDE / EDITOR
+# =========================
+.vscode/
+.idea/
+
+# =========================
+# TEST
+# =========================
+coverage/
+
+# =========================
+# MISC
+# =========================
+*.pem
