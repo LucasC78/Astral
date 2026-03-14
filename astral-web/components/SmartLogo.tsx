@@ -1,10 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type Props = {
-  primarySrc?: string | null; // ex: tool.logoUrl
-  fallbackSrc?: string | null; // ex: favicon google
+  primarySrc?: string | null;
+  fallbackSrc?: string | null;
   alt: string;
   className?: string;
 };
@@ -15,14 +15,26 @@ export default function SmartLogo({
   alt,
   className,
 }: Props) {
-  const initial = useMemo(
+  const [mounted, setMounted] = useState(false);
+
+  const initialSrc = useMemo(
     () => primarySrc || fallbackSrc || null,
     [primarySrc, fallbackSrc],
   );
-  const [src, setSrc] = useState<string | null>(initial);
+
+  const [src, setSrc] = useState<string | null>(initialSrc);
   const [triedFallback, setTriedFallback] = useState(false);
 
-  if (!src) return null;
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    setSrc(initialSrc);
+    setTriedFallback(false);
+  }, [initialSrc]);
+
+  if (!mounted || !src) return null;
 
   return (
     // eslint-disable-next-line @next/next/no-img-element
@@ -38,7 +50,7 @@ export default function SmartLogo({
           setSrc(fallbackSrc);
           return;
         }
-        // si même le fallback casse → on masque
+
         setSrc(null);
       }}
     />

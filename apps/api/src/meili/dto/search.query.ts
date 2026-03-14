@@ -5,7 +5,6 @@ import {
   IsInt,
   IsOptional,
   IsString,
-  Length,
   Max,
   Min,
 } from 'class-validator';
@@ -52,14 +51,13 @@ export class SearchQuery {
   @Max(100)
   limit?: number = 20;
 
-  // 🎯 Filtres (✅ single ou multi : répétition ou CSV)
+  // 🎯 Filtres (single ou multi : répétition ou CSV)
 
   @IsOptional()
   @Transform(({ value }) => {
     const arr = toStringArray(value);
     return arr?.map((v) => v.toUpperCase());
   })
-  // countryCode est maintenant un tableau
   countryCode?: string[];
 
   @IsOptional()
@@ -73,6 +71,10 @@ export class SearchQuery {
   @IsOptional()
   @Transform(({ value }) => toStringArray(value))
   gdprLevel?: string[];
+
+  @IsOptional()
+  @Transform(({ value }) => toStringArray(value)?.map((v) => v.toLowerCase()))
+  tags?: string[];
 
   @IsOptional()
   @Transform(({ value }) => value === 'true' || value === true)

@@ -1,7 +1,6 @@
-// \astral\astral-web\app\page.tsx
-
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -39,16 +38,83 @@ function Tag({ children }: { children: string }) {
   );
 }
 
-type FacetKey = "category" | "gdprLevel" | "hostingRegion";
+function Badge({
+  children,
+  tone = "neutral",
+}: {
+  children: string;
+  tone?: "neutral" | "green" | "blue";
+}) {
+  const styles = {
+    neutral: "border-gray-200 bg-gray-50 text-gray-700",
+    green: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    blue: "border-sky-200 bg-sky-50 text-sky-700",
+  };
+
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${styles[tone]}`}
+    >
+      {children}
+    </span>
+  );
+}
+
+function ToolBadges({ tool }: { tool: Tool }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {tool.hostingRegion === "EU" && <Badge tone="blue">EU hosted</Badge>}
+      {tool.gdprLevel === "strong" && <Badge tone="green">GDPR strong</Badge>}
+      {tool.isOpenSource && <Badge tone="neutral">Open-source</Badge>}
+    </div>
+  );
+}
+
+type FacetKey =
+  | "category"
+  | "gdprLevel"
+  | "hostingRegion"
+  | "countryCode"
+  | "isOpenSource"
+  | "tags";
+
+type SortOption =
+  | ""
+  | "name:asc"
+  | "name:desc"
+  | "createdAt:asc"
+  | "createdAt:desc"
+  | "updatedAt:asc"
+  | "updatedAt:desc";
 
 const FACET_LABELS: Record<FacetKey, string> = {
   category: "Catégorie",
   gdprLevel: "Niveau RGPD",
   hostingRegion: "Région d’hébergement",
+  countryCode: "Pays",
+  isOpenSource: "Open-source",
+  tags: "Tags",
+};
+
+const SORT_LABELS: Record<Exclude<SortOption, "">, string> = {
+  "name:asc": "Nom A → Z",
+  "name:desc": "Nom Z → A",
+  "createdAt:desc": "Ajout récent",
+  "createdAt:asc": "Ajout ancien",
+  "updatedAt:desc": "Mise à jour récente",
+  "updatedAt:asc": "Mise à jour ancienne",
 };
 
 function uniq(arr: string[]) {
   return Array.from(new Set(arr.filter(Boolean)));
+}
+
+function displayFacetValue(key: FacetKey, value: string) {
+  if (key === "isOpenSource") {
+    return value === "true" ? "Oui" : "Non";
+  }
+
+  return value;
 }
 
 export default function HomePage() {
@@ -59,26 +125,25 @@ export default function HomePage() {
   const [debouncedQuery, setDebouncedQuery] = useState(query);
   const [limit] = useState(20);
   const [offset, setOffset] = useState(0);
+  const [sort, setSort] = useState<SortOption>("");
 
   const [data, setData] = useState<SearchResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Facets fallback (global distribution)
   const [facets, setFacets] = useState<FacetsResponse | null>(null);
   const [facetsLoading, setFacetsLoading] = useState(false);
   const [facetsError, setFacetsError] = useState<string | null>(null);
 
-  // Selected facet values (multi)
   const [selected, setSelected] = useState<Record<FacetKey, string[]>>({
     category: [],
     gdprLevel: [],
     hostingRegion: [],
+    countryCode: [],
+    isOpenSource: [],
+    tags: [],
   });
 
-  // -----------------------------
-  // 1) INIT STATE FROM URL (once)
-  // -----------------------------
   const didInitFromUrl = useRef(false);
 
   useEffect(() => {
@@ -87,45 +152,54 @@ export default function HomePage() {
     const q = sp.get("q") ?? "";
     const off = Number(sp.get("offset") ?? "0");
     const safeOffset = Number.isFinite(off) && off >= 0 ? off : 0;
+    const sortParam = (sp.get("sort") ?? "") as SortOption;
 
     const category = uniq(sp.getAll("category"));
     const gdprLevel = uniq(sp.getAll("gdprLevel"));
     const hostingRegion = uniq(sp.getAll("hostingRegion"));
+    const countryCode = uniq(sp.getAll("countryCode")).map((v) =>
+      v.toUpperCase(),
+    );
+    const isOpenSource = uniq(sp.getAll("isOpenSource"));
+    const tags = uniq(sp.getAll("tags")).map((v) => v.toLowerCase());
 
     setQuery(q);
     setOffset(safeOffset);
+    setSort(sortParam);
     setSelected({
       category,
       gdprLevel,
       hostingRegion,
+      countryCode,
+      isOpenSource,
+      tags,
     });
 
     didInitFromUrl.current = true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sp]);
 
-  // -----------------------------
-  // 2) WRITE STATE TO URL (sync)
-  // -----------------------------
   const didWriteUrlOnce = useRef(false);
 
   useEffect(() => {
-    // évite d’écrire avant l’init depuis l’URL
     if (!didInitFromUrl.current) return;
 
     const params = new URLSearchParams();
 
     if (query.trim()) params.set("q", query.trim());
     if (offset > 0) params.set("offset", String(offset));
+    if (sort) params.set("sort", sort);
 
     selected.category.forEach((v) => params.append("category", v));
     selected.gdprLevel.forEach((v) => params.append("gdprLevel", v));
     selected.hostingRegion.forEach((v) => params.append("hostingRegion", v));
+    selected.countryCode.forEach((v) => params.append("countryCode", v));
+    selected.isOpenSource.forEach((v) => params.append("isOpenSource", v));
+    selected.tags.forEach((v) => params.append("tags", v));
 
     const qs = params.toString();
     const nextUrl = qs ? `/?${qs}` : `/`;
 
-    // petit guard pour éviter un replace inutile au tout début
     if (!didWriteUrlOnce.current) {
       didWriteUrlOnce.current = true;
       router.replace(nextUrl);
@@ -133,11 +207,8 @@ export default function HomePage() {
     }
 
     router.replace(nextUrl);
-  }, [query, offset, selected, router]);
+  }, [query, offset, sort, selected, router]);
 
-  // -----------------------------
-  // 3) LOAD GLOBAL FACETS (fallback)
-  // -----------------------------
   useEffect(() => {
     setFacetsLoading(true);
     setFacetsError(null);
@@ -151,11 +222,7 @@ export default function HomePage() {
       .finally(() => setFacetsLoading(false));
   }, []);
 
-  // -----------------------------
-  // 4) SEARCH (q + offset + filters)
-  // -----------------------------
   useEffect(() => {
-    // attend l’init URL pour éviter une requête “vide” avant setState
     if (!didInitFromUrl.current) return;
 
     setLoading(true);
@@ -167,11 +234,16 @@ export default function HomePage() {
       offset,
     };
 
-    // ✅ params plats attendus par ton backend
+    if (sort) params.sort = sort;
     if (selected.category.length) params.category = selected.category;
     if (selected.gdprLevel.length) params.gdprLevel = selected.gdprLevel;
     if (selected.hostingRegion.length)
       params.hostingRegion = selected.hostingRegion;
+    if (selected.countryCode.length) params.countryCode = selected.countryCode;
+    if (selected.isOpenSource.length === 1) {
+      params.isOpenSource = selected.isOpenSource[0];
+    }
+    if (selected.tags.length) params.tags = selected.tags;
 
     searchTools(params)
       .then(setData)
@@ -180,7 +252,7 @@ export default function HomePage() {
         setError("Erreur lors de la recherche.");
       })
       .finally(() => setLoading(false));
-  }, [debouncedQuery, offset, limit, selected]);
+  }, [debouncedQuery, offset, limit, sort, selected]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -197,25 +269,44 @@ export default function HomePage() {
 
   function toggleFacet(key: FacetKey, value: string) {
     setOffset(0);
+
     setSelected((prev) => {
+      if (key === "isOpenSource") {
+        return {
+          ...prev,
+          isOpenSource: prev.isOpenSource.includes(value) ? [] : [value],
+        };
+      }
+
       const set = new Set(prev[key]);
       if (set.has(value)) set.delete(value);
       else set.add(value);
+
       return { ...prev, [key]: Array.from(set) };
     });
   }
 
   function clearAll() {
     setOffset(0);
-    setSelected({ category: [], gdprLevel: [], hostingRegion: [] });
+    setSort("");
+    setSelected({
+      category: [],
+      gdprLevel: [],
+      hostingRegion: [],
+      countryCode: [],
+      isOpenSource: [],
+      tags: [],
+    });
   }
 
   const activeFiltersCount =
     selected.category.length +
     selected.gdprLevel.length +
-    selected.hostingRegion.length;
+    selected.hostingRegion.length +
+    selected.countryCode.length +
+    selected.isOpenSource.length +
+    selected.tags.length;
 
-  // ✅ Facettes dynamiques : priorité /search, fallback /facets/tools
   const dynamicFacetDistribution = useMemo(() => {
     const fromSearch = data?.facetDistribution;
     const hasSearchFacets = fromSearch && Object.keys(fromSearch).length > 0;
@@ -224,8 +315,6 @@ export default function HomePage() {
 
   function renderFacet(key: FacetKey) {
     const dist = dynamicFacetDistribution[key] ?? {};
-
-    // garde les valeurs cochées même si count=0
     const selectedValues = selected[key] ?? [];
     const mergedKeys = new Set<string>([
       ...Object.keys(dist),
@@ -260,6 +349,7 @@ export default function HomePage() {
           <ul className="space-y-1">
             {entries.slice(0, 30).map(([value, count]) => {
               const checked = selected[key].includes(value);
+
               return (
                 <li key={`${key}:${value}`}>
                   <label className="flex items-center justify-between gap-2 text-sm">
@@ -269,7 +359,9 @@ export default function HomePage() {
                         checked={checked}
                         onChange={() => toggleFacet(key, value)}
                       />
-                      <span className="text-gray-700">{value}</span>
+                      <span className="text-gray-700">
+                        {displayFacetValue(key, value)}
+                      </span>
                     </span>
                     <span className="text-xs text-gray-500">{count}</span>
                   </label>
@@ -305,15 +397,38 @@ export default function HomePage() {
         </div>
       </header>
 
-      <input
-        className="w-full rounded-md border px-3 py-2"
-        value={query}
-        onChange={(e) => {
-          setOffset(0);
-          setQuery(e.target.value);
-        }}
-        placeholder="Rechercher un outil..."
-      />
+      <div className="flex flex-col gap-3 md:flex-row">
+        <input
+          className="w-full rounded-md border px-3 py-2"
+          value={query}
+          onChange={(e) => {
+            setOffset(0);
+            setQuery(e.target.value);
+          }}
+          placeholder="Rechercher un outil..."
+        />
+
+        <select
+          value={sort}
+          onChange={(e) => {
+            setOffset(0);
+            setSort(e.target.value as SortOption);
+          }}
+          className="rounded-md border px-3 py-2 text-sm"
+        >
+          <option value="">Tri par défaut</option>
+          <option value="name:asc">{SORT_LABELS["name:asc"]}</option>
+          <option value="name:desc">{SORT_LABELS["name:desc"]}</option>
+          <option value="createdAt:desc">
+            {SORT_LABELS["createdAt:desc"]}
+          </option>
+          <option value="createdAt:asc">{SORT_LABELS["createdAt:asc"]}</option>
+          <option value="updatedAt:desc">
+            {SORT_LABELS["updatedAt:desc"]}
+          </option>
+          <option value="updatedAt:asc">{SORT_LABELS["updatedAt:asc"]}</option>
+        </select>
+      </div>
 
       {data?.source === "db" && (
         <div className="rounded-md border p-3 text-sm bg-yellow-50 text-yellow-700">
@@ -328,20 +443,27 @@ export default function HomePage() {
       )}
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-[260px_1fr]">
-        {/* Sidebar facets */}
         <aside className="space-y-4">
           <div className="rounded-md border p-4 space-y-3">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold">Filtres</h2>
-              {activeFiltersCount > 0 ? (
-                <button
-                  type="button"
-                  className="text-xs underline text-gray-500 hover:text-gray-700"
-                  onClick={clearAll}
-                >
-                  Tout effacer
-                </button>
-              ) : null}
+              <div className="flex items-center gap-3">
+                {sort ? (
+                  <span className="text-xs text-gray-500">
+                    {SORT_LABELS[sort as Exclude<SortOption, "">]}
+                  </span>
+                ) : null}
+
+                {activeFiltersCount > 0 || sort ? (
+                  <button
+                    type="button"
+                    className="text-xs underline text-gray-500 hover:text-gray-700"
+                    onClick={clearAll}
+                  >
+                    Tout effacer
+                  </button>
+                ) : null}
+              </div>
             </div>
 
             {facetsLoading &&
@@ -359,12 +481,14 @@ export default function HomePage() {
                 {renderFacet("category")}
                 {renderFacet("gdprLevel")}
                 {renderFacet("hostingRegion")}
+                {renderFacet("countryCode")}
+                {renderFacet("isOpenSource")}
+                {renderFacet("tags")}
               </div>
             )}
           </div>
         </aside>
 
-        {/* Results */}
         <section className="space-y-4">
           {loading && (
             <div className="text-sm text-gray-500">Chargement...</div>
@@ -392,16 +516,18 @@ export default function HomePage() {
                     </div>
 
                     <div className="min-w-0 flex-1 space-y-2">
-                      <a
+                      <Link
                         href={`/tools/${tool.slug}`}
                         className="font-semibold hover:underline"
                       >
                         {tool.name}
-                      </a>
+                      </Link>
 
                       <p className="text-sm text-gray-600">
                         {tool.description}
                       </p>
+
+                      <ToolBadges tool={tool} />
 
                       {tags.length > 0 ? (
                         <div className="flex flex-wrap gap-2">
@@ -422,6 +548,10 @@ export default function HomePage() {
                         <span>RGPD: {tool.gdprLevel}</span>
                         <span>•</span>
                         <span>{tool.hostingRegion}</span>
+                        <span>•</span>
+                        <span>
+                          Open-source: {tool.isOpenSource ? "Oui" : "Non"}
+                        </span>
                       </div>
                     </div>
                   </div>

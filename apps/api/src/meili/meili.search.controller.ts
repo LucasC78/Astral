@@ -37,6 +37,9 @@ export class MeiliSearchController {
     const gdpr = buildOrFilter('gdprLevel', query.gdprLevel);
     if (gdpr) filters.push(gdpr);
 
+    const tags = buildOrFilter('tags', query.tags);
+    if (tags) filters.push(tags);
+
     if (query.isOpenSource !== undefined) {
       filters.push(`isOpenSource = ${query.isOpenSource}`);
     }
@@ -47,6 +50,7 @@ export class MeiliSearchController {
       'hostingRegion',
       'gdprLevel',
       'isOpenSource',
+      'tags',
     ];
 
     // ✅ 1) Try Meili
@@ -56,7 +60,6 @@ export class MeiliSearchController {
       const res = await this.meili.searchTools(query.q, {
         limit: query.limit,
         offset: query.offset,
-        // ✅ Meili attend un tableau de filtres (AND entre éléments)
         filter: filters.length ? filters : undefined,
         sort: query.sort,
         facets,
@@ -68,19 +71,26 @@ export class MeiliSearchController {
       const limit = Math.min(query.limit ?? 20, 100);
       const offset = query.offset ?? 0;
 
-      // filtres structurés
       const filterWhere: any = {};
-      if (query.countryCode?.length)
+      if (query.countryCode?.length) {
         filterWhere.countryCode = { in: query.countryCode };
-      if (query.category?.length) filterWhere.category = { in: query.category };
-      if (query.hostingRegion?.length)
+      }
+      if (query.category?.length) {
+        filterWhere.category = { in: query.category };
+      }
+      if (query.hostingRegion?.length) {
         filterWhere.hostingRegion = { in: query.hostingRegion };
-      if (query.gdprLevel?.length)
+      }
+      if (query.gdprLevel?.length) {
         filterWhere.gdprLevel = { in: query.gdprLevel };
-      if (query.isOpenSource !== undefined)
+      }
+      if (query.tags?.length) {
+        filterWhere.tags = { hasSome: query.tags };
+      }
+      if (query.isOpenSource !== undefined) {
         filterWhere.isOpenSource = query.isOpenSource;
+      }
 
-      // full-text fallback
       const qWhere =
         query.q && query.q.trim().length > 0
           ? {
@@ -101,11 +111,15 @@ export class MeiliSearchController {
                     mode: 'insensitive' as const,
                   },
                 },
+                {
+                  tags: {
+                    hasSome: [query.q.trim().toLowerCase()],
+                  },
+                },
               ],
             }
           : {};
 
-      // AND = filtres + recherche
       const where = { ...filterWhere, ...(qWhere as any) };
 
       const [items, total] = await Promise.all([
@@ -125,7 +139,7 @@ export class MeiliSearchController {
         offset,
         estimatedTotalHits: total,
         processingTimeMs: 0,
-        facetDistribution: {}, // pas dispo en DB fallback
+        facetDistribution: {},
         facetStats: {},
         source: 'db' as const,
         degraded: true,
