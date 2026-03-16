@@ -1,10 +1,15 @@
-import { NestFactory } from '@nestjs/core';
+import { NestFactory, HttpAdapterHost } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, Logger } from '@nestjs/common';
 import helmet from 'helmet';
+import { ConfigService } from '@nestjs/config';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, {
+    bufferLogs: true,
+  });
+
+  const logger = new Logger('Bootstrap');
 
   // 🛡️ Security headers
   app.use(helmet());
@@ -25,10 +30,16 @@ async function bootstrap() {
     }),
   );
 
-  const port = Number(process.env.PORT) || 3001;
+  const configService = app.get(ConfigService);
+  const port = configService.get<number>('PORT') ?? 3001;
+
   await app.listen(port, '0.0.0.0');
 
-  console.log(`🚀 API running on http://localhost:${port}`);
+  logger.log(`🚀 API running on http://localhost:${port}`);
+  logger.log(
+    `🌍 Environment: ${configService.get('NODE_ENV') ?? 'development'}`,
+  );
+  logger.log(`🔍 Meilisearch: ${configService.get('MEILI_HOST')}`);
 }
 
 bootstrap();

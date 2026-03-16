@@ -11,12 +11,14 @@ import { PrismaModule } from './prisma/prisma.module';
 import { ToolsModule } from './tools/tools.module';
 import { MeiliModule } from './meili/meili.module';
 import { AdminModule } from './admin/admin.module';
+import { envValidationSchema } from './config/env.validation';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
+      validationSchema: envValidationSchema, // 👈
     }),
 
     ThrottlerModule.forRootAsync({
