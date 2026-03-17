@@ -1,15 +1,10 @@
 import type { Metadata } from "next";
-import { Geist } from "next/font/google";
 import "./globals.css";
 
-const geist = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
 export const metadata: Metadata = {
-  title: "Astral — Outils européens RGPD-friendly",
-  description: "Catalogue d'outils européens respectueux du RGPD.",
+  title: "Astral — Moteur de recherche européen",
+  description:
+    "Le moteur de recherche européen qui respecte votre vie privée. Catalogue d'outils RGPD-friendly.",
 };
 
 export default function RootLayout({
@@ -18,12 +13,27 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="fr" suppressHydrationWarning>
-      <body
-        className={`${geist.variable} font-sans antialiased bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100 transition-colors`}
-      >
-        {children}
-      </body>
+    <html lang="fr" data-theme="dark" suppressHydrationWarning>
+      <head>
+        {/* Anti-flash : applique le thème sauvegardé avant le premier paint */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                try {
+                  var t = localStorage.getItem('astral-theme') || 'dark';
+                  var resolved = t;
+                  if (t === 'system') {
+                    resolved = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+                  }
+                  document.documentElement.setAttribute('data-theme', resolved);
+                } catch(e) {}
+              })();
+            `,
+          }}
+        />
+      </head>
+      <body>{children}</body>
     </html>
   );
 }
