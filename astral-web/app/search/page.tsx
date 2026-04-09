@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   getFacets,
@@ -11,113 +11,83 @@ import {
   Tool,
 } from "@/lib/api";
 import SmartLogo from "@/components/SmartLogo";
+import AstralLogo from "@/components/AstralLogo";
+import SettingsDrawer from "@/components/SettingsDrawer";
+import AstralFooter from "@/components/AstralFooter";
+import { useTheme } from "@/hooks/useTheme";
+import styles from "./page.module.css";
 
+/* ── helpers ── */
 function hostnameFromUrl(url?: string | null): string | null {
   try {
     if (!url) return null;
-    const u = new URL(url);
-    return u.hostname;
+    return new URL(url).hostname;
   } catch {
     return null;
   }
 }
-
-function faviconUrlFromWebsite(websiteUrl?: string | null): string | null {
-  const host = hostnameFromUrl(websiteUrl);
-  if (!host) return null;
-  return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=128`;
+function faviconUrlFromWebsite(url?: string | null): string | null {
+  const h = hostnameFromUrl(url);
+  if (!h) return null;
+  return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(h)}&sz=128`;
+}
+function faviconColor(name: string): string {
+  const c = [
+    "linear-gradient(135deg,#1d4ed8,#3b82f6)",
+    "linear-gradient(135deg,#7c3aed,#a78bfa)",
+    "linear-gradient(135deg,#0891b2,#06b6d4)",
+    "linear-gradient(135deg,#059669,#34d399)",
+    "linear-gradient(135deg,#dc2626,#f87171)",
+    "linear-gradient(135deg,#d97706,#fbbf24)",
+    "linear-gradient(135deg,#db2777,#f472b6)",
+  ];
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
+  return c[Math.abs(h) % c.length];
+}
+function displayFacetValue(key: FacetKey, value: string) {
+  if (key === "isOpenSource") return value === "true" ? "Oui" : "Non";
+  return value;
+}
+function uniq(arr: string[]) {
+  return Array.from(new Set(arr.filter(Boolean)));
 }
 
-function Tag({ children }: { children: string }) {
-  return (
-    <span className="inline-flex items-center rounded-full border border-gray-200 bg-white px-2 py-0.5 text-xs text-gray-700">
-      {children}
-    </span>
-  );
+/* ── recent history ── */
+const HISTORY_KEY = "astral-recent";
+const HISTORY_MAX = 6;
+
+type HistoryEntry = {
+  slug: string;
+  name: string;
+  logoUrl?: string | null;
+  websiteUrl?: string | null;
+  category?: string;
+};
+
+function getHistory(): HistoryEntry[] {
+  try {
+    return JSON.parse(localStorage.getItem(HISTORY_KEY) ?? "[]");
+  } catch {
+    return [];
+  }
+}
+function pushHistory(entry: HistoryEntry) {
+  try {
+    const prev = getHistory().filter((e) => e.slug !== entry.slug);
+    localStorage.setItem(
+      HISTORY_KEY,
+      JSON.stringify([entry, ...prev].slice(0, HISTORY_MAX)),
+    );
+  } catch {}
+}
+function clearHistory() {
+  try {
+    localStorage.removeItem(HISTORY_KEY);
+  } catch {}
 }
 
-function Badge({
-  children,
-  tone = "neutral",
-}: {
-  children: string;
-  tone?: "neutral" | "green" | "blue";
-}) {
-  const styles = {
-    neutral: "border-gray-200 bg-gray-50 text-gray-700",
-    green: "border-emerald-200 bg-emerald-50 text-emerald-700",
-    blue: "border-sky-200 bg-sky-50 text-sky-700",
-  };
-  return (
-    <span
-      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${styles[tone]}`}
-    >
-      {children}
-    </span>
-  );
-}
-
-function ToolBadges({ tool }: { tool: Tool }) {
-  return (
-    <div className="flex flex-wrap gap-2">
-      {tool.hostingRegion === "EU" && <Badge tone="blue">EU hosted</Badge>}
-      {tool.gdprLevel === "strong" && <Badge tone="green">GDPR strong</Badge>}
-      {tool.isOpenSource && <Badge tone="neutral">Open-source</Badge>}
-    </div>
-  );
-}
-
-function SkeletonCard() {
-  return (
-    <li className="rounded-md border p-4 space-y-3 animate-pulse">
-      <div className="flex items-start gap-3">
-        <div className="h-10 w-10 shrink-0 rounded-md bg-gray-200" />
-        <div className="flex-1 space-y-2">
-          <div className="h-4 w-32 rounded bg-gray-200" />
-          <div className="h-3 w-full rounded bg-gray-100" />
-          <div className="h-3 w-3/4 rounded bg-gray-100" />
-          <div className="flex gap-2">
-            <div className="h-5 w-16 rounded-full bg-gray-200" />
-            <div className="h-5 w-20 rounded-full bg-gray-200" />
-          </div>
-        </div>
-      </div>
-    </li>
-  );
-}
-
-function SkeletonList() {
-  return (
-    <ul className="space-y-4">
-      {Array.from({ length: 5 }).map((_, i) => (
-        <SkeletonCard key={i} />
-      ))}
-    </ul>
-  );
-}
-
-function ActiveFilterPill({
-  label,
-  onRemove,
-}: {
-  label: string;
-  onRemove: () => void;
-}) {
-  return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
-      {label}
-      <button
-        type="button"
-        onClick={onRemove}
-        className="ml-0.5 hover:text-blue-900"
-        aria-label={`Supprimer le filtre ${label}`}
-      >
-        ×
-      </button>
-    </span>
-  );
-}
-
+/* ── types ── */
 type FacetKey =
   | "category"
   | "gdprLevel"
@@ -125,7 +95,6 @@ type FacetKey =
   | "countryCode"
   | "isOpenSource"
   | "tags";
-
 type SortOption =
   | ""
   | "name:asc"
@@ -134,40 +103,269 @@ type SortOption =
   | "createdAt:desc"
   | "updatedAt:asc"
   | "updatedAt:desc";
+type TabMode = "web" | "images";
 
 const FACET_LABELS: Record<FacetKey, string> = {
   category: "Catégorie",
-  gdprLevel: "Niveau RGPD",
-  hostingRegion: "Région d'hébergement",
+  gdprLevel: "RGPD",
+  hostingRegion: "Hébergement",
   countryCode: "Pays",
-  isOpenSource: "Open-source",
+  isOpenSource: "Open source",
   tags: "Tags",
 };
-
 const SORT_LABELS: Record<Exclude<SortOption, "">, string> = {
   "name:asc": "Nom A → Z",
   "name:desc": "Nom Z → A",
   "createdAt:desc": "Ajout récent",
   "createdAt:asc": "Ajout ancien",
-  "updatedAt:desc": "Mise à jour récente",
-  "updatedAt:asc": "Mise à jour ancienne",
+  "updatedAt:desc": "MàJ récente",
+  "updatedAt:asc": "MàJ ancienne",
 };
+const FACET_KEYS: FacetKey[] = [
+  "category",
+  "gdprLevel",
+  "hostingRegion",
+  "countryCode",
+  "isOpenSource",
+  "tags",
+];
 
-function uniq(arr: string[]) {
-  return Array.from(new Set(arr.filter(Boolean)));
+/* ── skeleton ── */
+function SkeletonResult() {
+  return (
+    <div className={styles.skeletonItem}>
+      <div className={styles.skeletonFav} />
+      <div className={styles.skeletonBody}>
+        <div className={styles.skeletonLine} style={{ width: "40%" }} />
+        <div className={styles.skeletonLine} style={{ width: "80%" }} />
+        <div className={styles.skeletonLine} style={{ width: "60%" }} />
+        <div className={styles.skeletonLine} style={{ width: "30%" }} />
+      </div>
+    </div>
+  );
+}
+function SkeletonList() {
+  return (
+    <div>
+      {Array.from({ length: 5 }).map((_, i) => (
+        <SkeletonResult key={i} />
+      ))}
+    </div>
+  );
 }
 
-function displayFacetValue(key: FacetKey, value: string) {
-  if (key === "isOpenSource") return value === "true" ? "Oui" : "Non";
-  return value;
+/* ── filter dropdown ── */
+function FilterDropdown({
+  facetKey,
+  label,
+  dist,
+  selected,
+  onToggle,
+}: {
+  facetKey: FacetKey;
+  label: string;
+  dist: Record<string, number>;
+  selected: string[];
+  onToggle: (k: FacetKey, v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    function h(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node))
+        setOpen(false);
+    }
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, []);
+  const entries = Array.from(new Set([...Object.keys(dist), ...selected]))
+    .map((v) => [v, dist[v] ?? 0] as const)
+    .sort((a, b) => b[1] - a[1]);
+  const count = selected.length;
+  return (
+    <div className={styles.filterDropdown} ref={ref}>
+      <button
+        className={`${styles.filterBtn} ${count > 0 ? styles.filterBtnActive : ""}`}
+        onClick={() => setOpen((v) => !v)}
+        type="button"
+      >
+        {count > 0 && <span className={styles.filterCount}>{count}</span>}
+        {label}
+        <svg
+          width="10"
+          height="10"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          style={{
+            transition: "transform .2s",
+            transform: open ? "rotate(180deg)" : "none",
+          }}
+        >
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+      <div
+        className={`${styles.filterPanel} ${open ? styles.filterPanelOpen : ""}`}
+      >
+        {entries.length === 0 ? (
+          <div
+            style={{
+              fontSize: "0.78rem",
+              color: "var(--muted)",
+              padding: "4px",
+            }}
+          >
+            Aucune valeur
+          </div>
+        ) : (
+          entries.slice(0, 30).map(([value, cnt]) => (
+            <div key={value} className={styles.filterItem}>
+              <label className={styles.filterItemLabel}>
+                <input
+                  type="checkbox"
+                  checked={selected.includes(value)}
+                  onChange={() => onToggle(facetKey, value)}
+                />
+                {displayFacetValue(facetKey, value)}
+              </label>
+              <span className={styles.filterItemCount}>{cnt}</span>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
 }
 
+/* ── recent history bar ── */
+function RecentBar({ onClear }: { onClear: () => void }) {
+  const [entries, setEntries] = useState<HistoryEntry[]>([]);
+  useEffect(() => {
+    setEntries(getHistory());
+  }, []);
+  if (entries.length === 0) return null;
+  return (
+    <div className={styles.recentSection}>
+      <div className={styles.recentHeader}>
+        <span className={styles.recentTitle}>Derniers consultés</span>
+        <button
+          className={styles.recentClear}
+          onClick={() => {
+            clearHistory();
+            setEntries([]);
+            onClear();
+          }}
+          type="button"
+        >
+          Effacer
+        </button>
+      </div>
+      <div className={styles.recentLinks}>
+        {entries.map((e) => (
+          <Link
+            key={e.slug}
+            href={`/tools/${e.slug}`}
+            className={styles.recentLink}
+          >
+            <div
+              className={styles.recentLinkIcon}
+              style={{ background: faviconColor(e.name) }}
+            >
+              <SmartLogo
+                primarySrc={e.logoUrl}
+                fallbackSrc={faviconUrlFromWebsite(e.websiteUrl)}
+                alt={e.name}
+                className={styles.recentLinkImg}
+              />
+            </div>
+            <span className={styles.recentLinkName}>{e.name}</span>
+            {e.category && (
+              <span className={styles.recentLinkCat}>{e.category}</span>
+            )}
+            <svg
+              width="10"
+              height="10"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              style={{ color: "var(--muted)", flexShrink: 0 }}
+            >
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ── image grid view ── */
+function ImageGrid({
+  hits,
+  onVisit,
+}: {
+  hits: Tool[];
+  onVisit: (t: Tool) => void;
+}) {
+  if (hits.length === 0)
+    return <div className={styles.emptyState}>Aucune image trouvée.</div>;
+  return (
+    <div className={styles.imageGrid}>
+      {hits.map((tool) => {
+        const fallback = faviconUrlFromWebsite(tool.websiteUrl);
+        return (
+          <Link
+            key={tool.id}
+            href={`/tools/${tool.slug}`}
+            className={styles.imageCard}
+            onClick={() => onVisit(tool)}
+          >
+            <div
+              className={styles.imageCardThumb}
+              style={{ background: faviconColor(tool.name) }}
+            >
+              <SmartLogo
+                primarySrc={tool.logoUrl}
+                fallbackSrc={fallback}
+                alt={tool.name}
+                className={styles.imageCardImg}
+              />
+            </div>
+            <div className={styles.imageCardBody}>
+              <span className={styles.imageCardName}>{tool.name}</span>
+              {tool.category && (
+                <span className={styles.imageCardCat}>{tool.category}</span>
+              )}
+              {hostnameFromUrl(tool.websiteUrl) && (
+                <span className={styles.imageCardDomain}>
+                  {hostnameFromUrl(tool.websiteUrl)}
+                </span>
+              )}
+            </div>
+          </Link>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════
+   MAIN PAGE
+══════════════════════════════════════════ */
 export default function SearchPage() {
   const router = useRouter();
   const sp = useSearchParams();
+  const { theme, lang, applyTheme, applyLang } = useTheme();
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [tab, setTab] = useState<TabMode>("web");
 
   const [query, setQuery] = useState("");
-  const [debouncedQuery, setDebouncedQuery] = useState(query);
+  const [searchQuery, setSearchQ] = useState(""); // ne change qu'au submit
   const [limit] = useState(20);
   const [offset, setOffset] = useState(0);
   const [sort, setSort] = useState<SortOption>("");
@@ -180,8 +378,6 @@ export default function SearchPage() {
   const [facetsLoading, setFacetsLoading] = useState(false);
   const [facetsError, setFacetsError] = useState<string | null>(null);
 
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-
   const [selected, setSelected] = useState<Record<FacetKey, string[]>>({
     category: [],
     gdprLevel: [],
@@ -191,43 +387,34 @@ export default function SearchPage() {
     tags: [],
   });
 
-  const didInitFromUrl = useRef(false);
+  const [recentKey, setRecentKey] = useState(0); // force re-render recent bar
 
+  const didInitFromUrl = useRef(false);
   useEffect(() => {
     if (didInitFromUrl.current) return;
     const q = sp.get("q") ?? "";
     const off = Number(sp.get("offset") ?? "0");
-    const safeOffset = Number.isFinite(off) && off >= 0 ? off : 0;
-    const sortParam = (sp.get("sort") ?? "") as SortOption;
-    const category = uniq(sp.getAll("category"));
-    const gdprLevel = uniq(sp.getAll("gdprLevel"));
-    const hostingRegion = uniq(sp.getAll("hostingRegion"));
-    const countryCode = uniq(sp.getAll("countryCode")).map((v) =>
-      v.toUpperCase(),
-    );
-    const isOpenSource = uniq(sp.getAll("isOpenSource"));
-    const tags = uniq(sp.getAll("tags")).map((v) => v.toLowerCase());
     setQuery(q);
-    setOffset(safeOffset);
-    setSort(sortParam);
+    setSearchQ(q); // init search query depuis URL
+    setOffset(Number.isFinite(off) && off >= 0 ? off : 0);
+    setSort((sp.get("sort") ?? "") as SortOption);
     setSelected({
-      category,
-      gdprLevel,
-      hostingRegion,
-      countryCode,
-      isOpenSource,
-      tags,
+      category: uniq(sp.getAll("category")),
+      gdprLevel: uniq(sp.getAll("gdprLevel")),
+      hostingRegion: uniq(sp.getAll("hostingRegion")),
+      countryCode: uniq(sp.getAll("countryCode")).map((v) => v.toUpperCase()),
+      isOpenSource: uniq(sp.getAll("isOpenSource")),
+      tags: uniq(sp.getAll("tags")).map((v) => v.toLowerCase()),
     });
     didInitFromUrl.current = true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sp]);
 
-  const didWriteUrlOnce = useRef(false);
-
+  const didWriteUrl = useRef(false);
   useEffect(() => {
     if (!didInitFromUrl.current) return;
     const params = new URLSearchParams();
-    if (query.trim()) params.set("q", query.trim());
+    if (searchQuery.trim()) params.set("q", searchQuery.trim());
     if (offset > 0) params.set("offset", String(offset));
     if (sort) params.set("sort", sort);
     selected.category.forEach((v) => params.append("category", v));
@@ -237,22 +424,21 @@ export default function SearchPage() {
     selected.isOpenSource.forEach((v) => params.append("isOpenSource", v));
     selected.tags.forEach((v) => params.append("tags", v));
     const qs = params.toString();
-    const nextUrl = qs ? `/search?${qs}` : `/search`;
-    if (!didWriteUrlOnce.current) {
-      didWriteUrlOnce.current = true;
-      router.replace(nextUrl);
+    const url = qs ? `/search?${qs}` : `/search`;
+    if (!didWriteUrl.current) {
+      didWriteUrl.current = true;
+      router.replace(url);
       return;
     }
-    router.replace(nextUrl);
-  }, [query, offset, sort, selected, router]);
+    router.replace(url);
+  }, [searchQuery, offset, sort, selected, router]);
 
   useEffect(() => {
     setFacetsLoading(true);
-    setFacetsError(null);
     getFacets()
       .then(setFacets)
-      .catch((err) => {
-        console.error(err);
+      .catch((e) => {
+        console.error(e);
         setFacetsError("Impossible de charger les facettes.");
       })
       .finally(() => setFacetsLoading(false));
@@ -260,10 +446,15 @@ export default function SearchPage() {
 
   useEffect(() => {
     if (!didInitFromUrl.current) return;
+    if (!searchQuery.trim()) {
+      setData(null);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     const params: Record<string, string | number | string[] | undefined> = {
-      q: debouncedQuery || "",
+      q: searchQuery.trim(),
       limit,
       offset,
     };
@@ -278,41 +469,34 @@ export default function SearchPage() {
     if (selected.tags.length) params.tags = selected.tags;
     searchTools(params)
       .then(setData)
-      .catch((err) => {
-        console.error(err);
+      .catch((e) => {
+        console.error(e);
         setError("Erreur lors de la recherche.");
       })
       .finally(() => setLoading(false));
-  }, [debouncedQuery, offset, limit, sort, selected]);
-
-  useEffect(() => {
-    const timer = setTimeout(() => setDebouncedQuery(query), 300);
-    return () => clearTimeout(timer);
-  }, [query]);
+  }, [searchQuery, offset, limit, sort, selected]);
 
   const total = data?.estimatedTotalHits ?? 0;
-  const canPrev = offset > 0;
-  const canNext = offset + limit < total;
   const page = useMemo(() => Math.floor(offset / limit) + 1, [offset, limit]);
   const totalPages = useMemo(() => Math.ceil(total / limit), [total, limit]);
+  const canPrev = offset > 0;
+  const canNext = offset + limit < total;
 
-  function toggleFacet(key: FacetKey, value: string) {
+  const toggleFacet = useCallback((key: FacetKey, value: string) => {
     setOffset(0);
     setSelected((prev) => {
-      if (key === "isOpenSource") {
+      if (key === "isOpenSource")
         return {
           ...prev,
           isOpenSource: prev.isOpenSource.includes(value) ? [] : [value],
         };
-      }
-      const set = new Set(prev[key]);
-      if (set.has(value)) set.delete(value);
-      else set.add(value);
-      return { ...prev, [key]: Array.from(set) };
+      const s = new Set(prev[key]);
+      s.has(value) ? s.delete(value) : s.add(value);
+      return { ...prev, [key]: Array.from(s) };
     });
-  }
+  }, []);
 
-  function clearAll() {
+  const clearAll = useCallback(() => {
     setOffset(0);
     setSort("");
     setSelected({
@@ -323,376 +507,518 @@ export default function SearchPage() {
       isOpenSource: [],
       tags: [],
     });
+  }, []);
+
+  function handleSearch() {
+    const q = query.trim();
+    if (!q) return;
+    setOffset(0);
+    setSearchQ(q);
   }
 
-  const activeFiltersCount =
-    selected.category.length +
-    selected.gdprLevel.length +
-    selected.hostingRegion.length +
-    selected.countryCode.length +
-    selected.isOpenSource.length +
-    selected.tags.length;
-
-  const activeFilterPills = (Object.keys(selected) as FacetKey[]).flatMap(
-    (key) =>
-      selected[key].map((value) => ({
-        key,
-        value,
-        label: `${FACET_LABELS[key]}: ${displayFacetValue(key, value)}`,
-      })),
+  const activeFiltersCount = FACET_KEYS.reduce(
+    (acc, k) => acc + selected[k].length,
+    0,
+  );
+  const activeFilterPills = FACET_KEYS.flatMap((key) =>
+    selected[key].map((value) => ({
+      key,
+      value,
+      label: `${FACET_LABELS[key]}: ${displayFacetValue(key, value)}`,
+    })),
   );
 
-  const dynamicFacetDistribution = useMemo(() => {
-    const fromSearch = data?.facetDistribution;
-    const hasSearchFacets = fromSearch && Object.keys(fromSearch).length > 0;
-    return hasSearchFacets ? fromSearch : (facets?.facetDistribution ?? {});
+  const dynamicDist = useMemo(() => {
+    const f = data?.facetDistribution;
+    return f && Object.keys(f).length > 0
+      ? f
+      : (facets?.facetDistribution ?? {});
   }, [data?.facetDistribution, facets?.facetDistribution]);
 
-  function renderFacet(key: FacetKey) {
-    const dist = dynamicFacetDistribution[key] ?? {};
-    const selectedValues = selected[key] ?? [];
-    const mergedKeys = new Set<string>([
-      ...Object.keys(dist),
-      ...selectedValues,
-    ]);
-    const entries = Array.from(mergedKeys)
-      .map((value) => [value, dist[value] ?? 0] as const)
-      .sort((a, b) => b[1] - a[1]);
-
-    return (
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium">{FACET_LABELS[key]}</h3>
-          {selected[key].length > 0 && (
-            <button
-              className="text-xs underline text-gray-500 hover:text-gray-700"
-              onClick={() => {
-                setOffset(0);
-                setSelected((prev) => ({ ...prev, [key]: [] }));
-              }}
-              type="button"
-            >
-              Effacer
-            </button>
-          )}
-        </div>
-        {entries.length === 0 ? (
-          <div className="text-xs text-gray-500">Aucune valeur</div>
-        ) : (
-          <ul className="space-y-1">
-            {entries.slice(0, 30).map(([value, count]) => {
-              const checked = selected[key].includes(value);
-              return (
-                <li key={`${key}:${value}`}>
-                  <label className="flex items-center justify-between gap-2 text-sm cursor-pointer">
-                    <span className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => toggleFacet(key, value)}
-                      />
-                      <span
-                        className={
-                          checked
-                            ? "text-gray-900 font-medium"
-                            : "text-gray-700"
-                        }
-                      >
-                        {displayFacetValue(key, value)}
-                      </span>
-                    </span>
-                    <span className="text-xs text-gray-400">{count}</span>
-                  </label>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </div>
-    );
+  function handleVisit(tool: Tool) {
+    pushHistory({
+      slug: tool.slug,
+      name: tool.name,
+      logoUrl: tool.logoUrl,
+      websiteUrl: tool.websiteUrl,
+      category: tool.category,
+    });
+    setRecentKey((k) => k + 1);
   }
 
-  const sidebarContent = (
-    <div className="rounded-md border p-4 space-y-3">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold">Filtres</h2>
-        <div className="flex items-center gap-3">
-          {sort && (
-            <span className="text-xs text-gray-500">
-              {SORT_LABELS[sort as Exclude<SortOption, "">]}
-            </span>
-          )}
-          {(activeFiltersCount > 0 || sort) && (
-            <button
-              type="button"
-              className="text-xs underline text-gray-500 hover:text-gray-700"
-              onClick={clearAll}
-            >
-              Tout effacer
-            </button>
-          )}
-        </div>
-      </div>
-
-      {facetsLoading &&
-      (!data?.facetDistribution ||
-        Object.keys(data.facetDistribution).length === 0) ? (
-        <div className="text-sm text-gray-500">Chargement des facettes…</div>
-      ) : facetsError &&
-        (!data?.facetDistribution ||
-          Object.keys(data.facetDistribution).length === 0) ? (
-        <div className="text-sm text-red-700">{facetsError}</div>
-      ) : (
-        <div className="space-y-6">
-          {renderFacet("category")}
-          {renderFacet("gdprLevel")}
-          {renderFacet("hostingRegion")}
-          {renderFacet("countryCode")}
-          {renderFacet("isOpenSource")}
-          {renderFacet("tags")}
-        </div>
-      )}
-    </div>
-  );
-
+  /* ══════ RENDER ══════ */
   return (
-    <main className="mx-auto max-w-6xl p-4 md:p-6 space-y-6">
-      {/* Lien retour accueil */}
-      <Link
-        href="/"
-        className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
-      >
-        ← Accueil
-      </Link>
+    <div className={styles.pageWrapper}>
+      <SettingsDrawer
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        theme={theme}
+        onThemeChange={applyTheme}
+        lang={lang}
+        onLangChange={applyLang}
+      />
 
-      {/* Header */}
-      <header className="space-y-2">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-semibold">Astral</h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Recherche d'outils européens RGPD-friendly.
-            </p>
+      {/* ── HEADER ── */}
+      <header className={styles.header}>
+        <div className={styles.headerRow1}>
+          <Link href="/" className={styles.logoWrap}>
+            <AstralLogo size={28} />
+            <span className={styles.logoText}>Astral</span>
+          </Link>
+          <div className={styles.headerRight}>
+            {data?.source === "meili" && (
+              <span className={styles.sourceBadgeMeili}>Index Meili</span>
+            )}
+            {data?.source === "db" && (
+              <span className={styles.sourceBadgeDb}>Mode dégradé</span>
+            )}
+            <button
+              className={`${styles.settingsBtn} ${drawerOpen ? styles.settingsBtnActive : ""}`}
+              onClick={() => setDrawerOpen((v) => !v)}
+              aria-label="Paramètres"
+            >
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+              >
+                <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" />
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+              </svg>
+            </button>
           </div>
-          {data?.source === "db" ? (
-            <span className="shrink-0 rounded-full border border-yellow-200 bg-yellow-50 px-3 py-1 text-xs font-medium text-yellow-800">
-              Mode dégradé (DB)
-            </span>
-          ) : data?.source === "meili" ? (
-            <span className="shrink-0 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800">
-              Index Meili
-            </span>
-          ) : null}
+        </div>
+
+        <div className={styles.headerRow2Outer}>
+          <div className={styles.headerRow2}>
+            <div className={styles.searchBox}>
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                style={{ color: "var(--muted)", flexShrink: 0 }}
+              >
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+              <input
+                type="text"
+                placeholder="Rechercher un outil..."
+                value={query}
+                onChange={(e) => {
+                  setQuery(e.target.value);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleSearch();
+                }}
+              />
+              {query && (
+                <button
+                  className={styles.clearBtn}
+                  onClick={() => {
+                    setOffset(0);
+                    setQuery("");
+                  }}
+                  type="button"
+                >
+                  <svg
+                    width="13"
+                    height="13"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                  >
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              )}
+            </div>
+            <button
+              className={styles.btnSearch}
+              type="button"
+              disabled={!query.trim()}
+              onClick={handleSearch}
+              style={
+                !query.trim() ? { opacity: 0.4, cursor: "not-allowed" } : {}
+              }
+            >
+              Rechercher
+            </button>
+            <nav className={styles.tabsBar}>
+              <button
+                className={`${styles.tab} ${tab === "web" ? styles.tabActive : ""}`}
+                onClick={() => setTab("web")}
+                type="button"
+              >
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="2" y1="12" x2="22" y2="12" />
+                  <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+                </svg>
+                Web
+              </button>
+              <button
+                className={`${styles.tab} ${tab === "images" ? styles.tabActive : ""}`}
+                onClick={() => setTab("images")}
+                type="button"
+              >
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <circle cx="8.5" cy="8.5" r="1.5" />
+                  <polyline points="21 15 16 10 5 21" />
+                </svg>
+                Images
+              </button>
+            </nav>
+          </div>
         </div>
       </header>
 
-      {/* Barre de recherche + tri */}
-      <div className="flex flex-col gap-3 md:flex-row">
-        <input
-          className="w-full rounded-md border px-3 py-2 dark:bg-gray-900 dark:border-gray-700"
-          value={query}
-          onChange={(e) => {
-            setOffset(0);
-            setQuery(e.target.value);
-          }}
-          placeholder="Rechercher un outil..."
-        />
-        <select
-          value={sort}
-          onChange={(e) => {
-            setOffset(0);
-            setSort(e.target.value as SortOption);
-          }}
-          className="rounded-md border px-3 py-2 text-sm md:w-56 shrink-0 dark:bg-gray-900 dark:border-gray-700"
-        >
-          <option value="">Tri par défaut</option>
-          {(Object.keys(SORT_LABELS) as Exclude<SortOption, "">[]).map((k) => (
-            <option key={k} value={k}>
-              {SORT_LABELS[k]}
-            </option>
+      {/* ── FILTERS BAR ── */}
+      <div className={styles.filtersBar}>
+        <div className={styles.filtersBarInner}>
+          {FACET_KEYS.map((key) => (
+            <FilterDropdown
+              key={key}
+              facetKey={key}
+              label={FACET_LABELS[key]}
+              dist={dynamicDist[key] ?? {}}
+              selected={selected[key]}
+              onToggle={toggleFacet}
+            />
           ))}
-        </select>
-
-        <button
-          type="button"
-          className="md:hidden flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
-          onClick={() => setSidebarOpen(true)}
-        >
-          Filtres
-          {activeFiltersCount > 0 && (
-            <span className="rounded-full bg-blue-600 text-white text-xs px-1.5 py-0.5">
-              {activeFiltersCount}
-            </span>
+          {(activeFiltersCount > 0 || sort) && (
+            <>
+              <div className={styles.filterSep} />
+              <button
+                className={styles.clearAllBtn}
+                onClick={clearAll}
+                type="button"
+              >
+                Tout effacer
+              </button>
+            </>
           )}
-        </button>
+        </div>
       </div>
 
-      {/* Filtres actifs pills */}
+      {/* ── ACTIVE PILLS ── */}
       {activeFilterPills.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {activeFilterPills.map(({ key, value, label }) => (
-            <ActiveFilterPill
-              key={`${key}:${value}`}
-              label={label}
-              onRemove={() => toggleFacet(key, value)}
-            />
-          ))}
-          <button
-            type="button"
-            onClick={clearAll}
-            className="text-xs text-gray-500 underline hover:text-gray-700 self-center"
-          >
-            Tout effacer
-          </button>
-        </div>
-      )}
-
-      {/* Erreurs */}
-      {data?.source === "db" && (
-        <div className="rounded-md border p-3 text-sm bg-yellow-50 text-yellow-700">
-          ⚠️ Mode dégradé (fallback base de données)
-        </div>
-      )}
-      {error && (
-        <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-700">
-          {error}
-        </div>
-      )}
-
-      {/* Layout principal */}
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-[260px_1fr]">
-        {/* Sidebar desktop */}
-        <aside className="hidden md:block space-y-4">{sidebarContent}</aside>
-
-        {/* Drawer mobile */}
-        {sidebarOpen && (
-          <div className="fixed inset-0 z-50 md:hidden">
-            <div
-              className="absolute inset-0 bg-black/40"
-              onClick={() => setSidebarOpen(false)}
-            />
-            <div className="absolute left-0 top-0 bottom-0 w-80 max-w-full bg-white dark:bg-gray-900 overflow-y-auto p-4 space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="font-semibold">Filtres</span>
+        <div className={styles.activeBarOuter}>
+          <div className={styles.activeBar}>
+            <span className={styles.activeBarLabel}>Actifs :</span>
+            {activeFilterPills.map(({ key, value, label }) => (
+              <span key={`${key}:${value}`} className={styles.activePill}>
+                {label}
                 <button
+                  className={styles.activePillRemove}
+                  onClick={() => toggleFacet(key, value)}
                   type="button"
-                  onClick={() => setSidebarOpen(false)}
-                  className="text-gray-500 text-lg"
+                  aria-label={`Supprimer ${label}`}
                 >
-                  ✕
+                  ×
                 </button>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── MAIN ── */}
+      <div className={styles.main}>
+        {data?.source === "db" && (
+          <div className={styles.errorBox}>
+            ⚠ Mode dégradé — fallback base de données
+          </div>
+        )}
+        {error && <div className={styles.errorBoxRed}>{error}</div>}
+
+        {/* meta + tri */}
+        {!loading && (
+          <div className={styles.metaRow}>
+            <span className={styles.metaText}>
+              {total > 0
+                ? `${total} résultat${total > 1 ? "s" : ""} · ${data?.processingTimeMs ?? 0}ms`
+                : facetsLoading
+                  ? "Chargement…"
+                  : ""}
+            </span>
+            {tab === "web" && (
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span className={styles.sortLabel}>Trier</span>
+                <div className={styles.sortPill}>
+                  <svg
+                    width="11"
+                    height="11"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    style={{ color: "var(--muted)" }}
+                  >
+                    <line x1="3" y1="6" x2="21" y2="6" />
+                    <line x1="3" y1="12" x2="15" y2="12" />
+                    <line x1="3" y1="18" x2="9" y2="18" />
+                  </svg>
+                  <select
+                    value={sort}
+                    onChange={(e) => {
+                      setOffset(0);
+                      setSort(e.target.value as SortOption);
+                    }}
+                  >
+                    <option value="">Pertinence</option>
+                    {(
+                      Object.keys(SORT_LABELS) as Exclude<SortOption, "">[]
+                    ).map((k) => (
+                      <option key={k} value={k}>
+                        {SORT_LABELS[k]}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
-              {sidebarContent}
-              <button
-                type="button"
-                className="w-full rounded-md bg-blue-600 text-white py-2 text-sm font-medium"
-                onClick={() => setSidebarOpen(false)}
-              >
-                Appliquer
-              </button>
-            </div>
+            )}
           </div>
         )}
 
-        {/* Résultats */}
-        <section className="space-y-4">
-          {loading ? (
-            <SkeletonList />
-          ) : (
-            <>
-              {!error && data?.hits?.length === 0 && (
-                <div className="text-sm text-gray-500">
-                  Aucun résultat trouvé.
-                </div>
-              )}
+        {loading ? (
+          <SkeletonList />
+        ) : (
+          <>
+            {/* ── IMAGE TAB ── */}
+            {tab === "images" && (
+              <ImageGrid hits={data?.hits ?? []} onVisit={handleVisit} />
+            )}
 
-              <ul className="space-y-4">
-                {(data?.hits ?? []).map((tool: Tool) => {
-                  const fallback = faviconUrlFromWebsite(tool.websiteUrl);
-                  const tags = (tool.tags ?? []).filter(Boolean);
-                  return (
-                    <li
-                      key={tool.id}
-                      className="rounded-md border p-4 space-y-3 dark:border-gray-700"
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className="h-10 w-10 shrink-0 overflow-hidden rounded-md border bg-gray-50 dark:border-gray-700 dark:bg-gray-800">
+            {/* ── WEB TAB ── */}
+            {tab === "web" && (
+              <>
+                {!error && data?.hits?.length === 0 && (
+                  <div className={styles.emptyState}>
+                    Aucun résultat trouvé.
+                  </div>
+                )}
+
+                <ul className={styles.resultList}>
+                  {(data?.hits ?? []).map((tool: Tool) => {
+                    const hostname = hostnameFromUrl(tool.websiteUrl);
+                    const fallback = faviconUrlFromWebsite(tool.websiteUrl);
+                    const tags = (tool.tags ?? []).filter(Boolean);
+                    return (
+                      <li key={tool.id} className={styles.result}>
+                        <div
+                          className={styles.favicon}
+                          style={{ background: faviconColor(tool.name) }}
+                        >
                           <SmartLogo
                             primarySrc={tool.logoUrl}
                             fallbackSrc={fallback}
-                            alt={`${tool.name} logo`}
-                            className="h-full w-full object-contain"
+                            alt={tool.name}
+                            className={styles.faviconImg}
                           />
                         </div>
-                        <div className="min-w-0 flex-1 space-y-2">
+                        <div className={styles.resultBody}>
+                          <div className={styles.resultDomain}>
+                            <span className={styles.resultDomainName}>
+                              {hostname}
+                            </span>
+                            {tool.websiteUrl && (
+                              <span className={styles.resultUrl}>
+                                {tool.websiteUrl}
+                              </span>
+                            )}
+                          </div>
                           <Link
                             href={`/tools/${tool.slug}`}
-                            className="font-semibold hover:underline"
+                            className={styles.resultTitle}
+                            onClick={() => handleVisit(tool)}
                           >
                             {tool.name}
                           </Link>
-                          <p className="text-sm text-gray-600 dark:text-gray-400">
+                          <p className={styles.resultSnippet}>
                             {tool.description}
                           </p>
-                          <ToolBadges tool={tool} />
+                          <div className={styles.badges}>
+                            {tool.countryCode && (
+                              <span className={styles.badgeCountry}>
+                                {tool.countryCode}
+                              </span>
+                            )}
+                            {tool.gdprLevel === "strong" && (
+                              <span className={styles.badgeRgpd}>
+                                RGPD fort
+                              </span>
+                            )}
+                            {tool.hostingRegion === "EU" && (
+                              <span className={styles.badgeEu}>EU hosted</span>
+                            )}
+                            {tool.isOpenSource && (
+                              <span className={styles.badgeOs}>
+                                Open source
+                              </span>
+                            )}
+                            {tool.category && (
+                              <span className={styles.badgeCat}>
+                                {tool.category}
+                              </span>
+                            )}
+                          </div>
                           {tags.length > 0 && (
-                            <div className="flex flex-wrap gap-2">
+                            <div className={styles.tags}>
                               {tags.slice(0, 10).map((t) => (
-                                <Tag key={t}>{t}</Tag>
+                                <span key={t} className={styles.tag}>
+                                  {t}
+                                </span>
                               ))}
                               {tags.length > 10 && (
-                                <Tag>{`+${tags.length - 10}`}</Tag>
+                                <span className={styles.tag}>
+                                  +{tags.length - 10}
+                                </span>
                               )}
                             </div>
                           )}
-                          <div className="flex flex-wrap gap-2 text-xs text-gray-500">
-                            <span>{tool.countryCode}</span>
-                            <span>•</span>
-                            <span>{tool.category}</span>
-                            <span>•</span>
-                            <span>RGPD: {tool.gdprLevel}</span>
-                            <span>•</span>
-                            <span>{tool.hostingRegion}</span>
-                            <span>•</span>
-                            <span>
-                              Open-source: {tool.isOpenSource ? "Oui" : "Non"}
-                            </span>
+                          <div className={styles.resultActions}>
+                            <Link
+                              href={`/tools/${tool.slug}`}
+                              className={styles.btnMore}
+                              onClick={() => handleVisit(tool)}
+                            >
+                              Voir plus
+                              <svg
+                                width="12"
+                                height="12"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2.5"
+                                strokeLinecap="round"
+                              >
+                                <polyline points="9 18 15 12 9 6" />
+                              </svg>
+                            </Link>
+                            {tool.websiteUrl && (
+                              <a
+                                href={tool.websiteUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className={styles.btnSite}
+                                onClick={() => handleVisit(tool)}
+                              >
+                                <svg
+                                  width="11"
+                                  height="11"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2.5"
+                                  strokeLinecap="round"
+                                >
+                                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                                  <polyline points="15 3 21 3 21 9" />
+                                  <line x1="10" y1="14" x2="21" y2="3" />
+                                </svg>
+                                Site officiel
+                              </a>
+                            )}
                           </div>
                         </div>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
+                      </li>
+                    );
+                  })}
+                </ul>
 
-              {/* Pagination */}
-              {!error && total > 0 && (
-                <div className="flex justify-between items-center pt-4 text-sm">
-                  <div className="text-gray-500">
-                    {total} résultat(s) — page {page} / {totalPages}
+                {/* pagination */}
+                {!error && total > 0 && (
+                  <div className={styles.pagination}>
+                    <span className={styles.paginationInfo}>
+                      {total} résultat{total > 1 ? "s" : ""} — page {page} /{" "}
+                      {totalPages}
+                    </span>
+                    <div className={styles.paginationBtns}>
+                      <button
+                        className={`${styles.pageBtn} ${!canPrev ? styles.pageBtnDisabled : ""}`}
+                        onClick={() => canPrev && setOffset(offset - limit)}
+                        disabled={!canPrev}
+                        type="button"
+                      >
+                        ←
+                      </button>
+                      {Array.from({ length: Math.min(totalPages, 5) }).map(
+                        (_, i) => {
+                          const p = i + 1;
+                          return (
+                            <button
+                              key={p}
+                              className={`${styles.pageBtn} ${p === page ? styles.pageBtnActive : ""}`}
+                              onClick={() => setOffset((p - 1) * limit)}
+                              type="button"
+                            >
+                              {p}
+                            </button>
+                          );
+                        },
+                      )}
+                      <button
+                        className={`${styles.pageBtn} ${styles.pageBtnNext} ${!canNext ? styles.pageBtnDisabled : ""}`}
+                        onClick={() => canNext && setOffset(offset + limit)}
+                        disabled={!canNext}
+                        type="button"
+                      >
+                        Suivant
+                        <svg
+                          width="11"
+                          height="11"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2.5"
+                          strokeLinecap="round"
+                        >
+                          <polyline points="9 18 15 12 9 6" />
+                        </svg>
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex gap-2">
-                    <button
-                      disabled={!canPrev}
-                      onClick={() => setOffset(offset - limit)}
-                      className="rounded-md border px-3 py-2 disabled:opacity-40 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
-                    >
-                      ←
-                    </button>
-                    <button
-                      disabled={!canNext}
-                      onClick={() => setOffset(offset + limit)}
-                      className="rounded-md border px-3 py-2 disabled:opacity-40 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
-                    >
-                      →
-                    </button>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-        </section>
+                )}
+
+                {/* ── RECENT BAR ── */}
+                <RecentBar
+                  key={recentKey}
+                  onClear={() => setRecentKey((k) => k + 1)}
+                />
+              </>
+            )}
+          </>
+        )}
       </div>
-    </main>
+
+      <AstralFooter />
+    </div>
   );
 }

@@ -18,7 +18,8 @@ export default function HomePage() {
   function handleSearch(e: React.FormEvent) {
     e.preventDefault();
     const q = query.trim();
-    router.push(q ? `/search?q=${encodeURIComponent(q)}` : "/search");
+    if (!q) return;
+    router.push(`/search?q=${encodeURIComponent(q)}`);
   }
 
   return (
