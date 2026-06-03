@@ -6,6 +6,40 @@ generator client {
   provider = "prisma-client-js"
 }
 
+enum UrlType {
+  OFFICIAL_WEBSITE
+  PRODUCT_PAGE
+  DOCS
+  PRICING
+  GITHUB
+  LINKEDIN
+  DIRECTORY
+  CONTACT
+  OTHER
+}
+
+enum ImageType {
+  LOGO
+  FAVICON
+  SCREENSHOT
+  BANNER
+  PRODUCT_IMAGE
+  OTHER
+}
+
+enum CrawlJobStatus {
+  PENDING
+  PROCESSING
+  DONE
+  FAILED
+}
+
+enum CrawlJobType {
+  DISCOVER
+  ENRICH
+  RECRAWL
+}
+
 model Tool {
   id            Int      @id @default(autoincrement())
   slug          String   @unique
@@ -19,6 +53,88 @@ model Tool {
   isOpenSource  Boolean  @default(false)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
-  logoUrl String?
-  tags    String[] @default([])
+  logoUrl       String?
+  tags          String[] @default([])
+
+  primaryUrlId   Int?
+  primaryImageId Int?
+
+  urls         ToolUrl[]   @relation("ToolUrls")
+  images       ToolImage[] @relation("ToolImages")
+  crawlJobs    CrawlQueue[]
+
+  primaryUrl   ToolUrl?   @relation("PrimaryToolUrl", fields: [primaryUrlId], references: [id], onDelete: SetNull)
+  primaryImage ToolImage? @relation("PrimaryToolImage", fields: [primaryImageId], references: [id], onDelete: SetNull)
+}
+
+model ToolUrl {
+  id            Int      @id @default(autoincrement())
+  toolId        Int
+  url           String
+  normalizedUrl String
+  domain        String?
+  type          UrlType  @default(OTHER)
+  isPrimary     Boolean  @default(false)
+  isActive      Boolean  @default(true)
+  lastSeenAt    DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tool Tool @relation("ToolUrls", fields: [toolId], references: [id], onDelete: Cascade)
+
+  primaryForTools Tool[] @relation("PrimaryToolUrl")
+
+  @@unique([toolId, normalizedUrl])
+  @@index([toolId])
+  @@index([domain])
+}
+
+model ToolImage {
+  id            Int       @id @default(autoincrement())
+  toolId        Int
+  url           String
+  normalizedUrl String
+  type          ImageType @default(OTHER)
+  isPrimary     Boolean   @default(false)
+  sourcePageUrl String?
+  mimeType      String?
+  width         Int?
+  height        Int?
+  altText       String?
+  contentHash   String?
+  lastSeenAt    DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  tool Tool @relation("ToolImages", fields: [toolId], references: [id], onDelete: Cascade)
+
+  primaryForTools Tool[] @relation("PrimaryToolImage")
+
+  @@unique([toolId, normalizedUrl])
+  @@index([toolId])
+  @@index([type])
+}
+
+model CrawlQueue {
+  id            Int            @id @default(autoincrement())
+  toolId        Int?
+  url           String
+  normalizedUrl String
+  domain        String?
+  status        CrawlJobStatus @default(PENDING)
+  jobType       CrawlJobType   @default(DISCOVER)
+  priority      Int            @default(0)
+  depth         Int            @default(0)
+  attempts      Int            @default(0)
+  nextRunAt     DateTime       @default(now())
+  lockedAt      DateTime?
+  lastError     String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  tool Tool? @relation(fields: [toolId], references: [id], onDelete: SetNull)
+
+  @@index([status, nextRunAt])
+  @@index([toolId])
+  @@index([domain])
 }

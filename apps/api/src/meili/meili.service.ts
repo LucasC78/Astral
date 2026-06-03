@@ -45,7 +45,6 @@ export class MeiliService {
     try {
       const index = this.toolsIndexHandle();
 
-      // 🔎 Recherche full-text
       await index.updateSearchableAttributes([
         'name',
         'description',
@@ -53,21 +52,21 @@ export class MeiliService {
         'countryCode',
         'hostingRegion',
         'gdprLevel',
-        'tags', // ✅ nouveau
+        'tags',
         'slug',
+        'websiteUrl',
+        'logoUrl',
       ]);
 
-      // 🧩 Filtres / facettes
       await index.updateFilterableAttributes([
         'countryCode',
         'category',
         'hostingRegion',
         'gdprLevel',
         'isOpenSource',
-        'tags', // ✅ nouveau (future-proof)
+        'tags',
       ]);
 
-      // ↕️ Tri
       await index.updateSortableAttributes(['createdAt', 'updatedAt', 'name']);
 
       this.toolsIndexConfigured = true;
@@ -135,7 +134,7 @@ export class MeiliService {
           'hostingRegion',
           'gdprLevel',
           'isOpenSource',
-          'tags', // ✅ nouveau
+          'tags',
         ],
       });
 
@@ -150,20 +149,25 @@ export class MeiliService {
     }
   }
 
-  // ✅ RESET complet (supprime l’index, puis il sera recréé à la prochaine indexation)
   async resetToolsIndex() {
     try {
       await this.client.deleteIndex(this.toolsIndex);
       this.toolsIndexConfigured = false;
-      return { index: this.toolsIndex, deleted: true };
+
+      return {
+        index: this.toolsIndex,
+        deleted: true,
+      };
     } catch (e: any) {
-      const msg = String(e?.message ?? '');
-      if (
-        msg.toLowerCase().includes('index') &&
-        msg.toLowerCase().includes('not found')
-      ) {
+      const msg = String(e?.message ?? '').toLowerCase();
+
+      if (msg.includes('index') && msg.includes('not found')) {
         this.toolsIndexConfigured = false;
-        return { index: this.toolsIndex, deleted: false };
+
+        return {
+          index: this.toolsIndex,
+          deleted: false,
+        };
       }
 
       console.error('[Meili] resetToolsIndex error:', e);

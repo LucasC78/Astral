@@ -6,6 +6,7 @@ COPY package*.json ./
 RUN npm ci --only=production
 
 COPY src/prisma ./src/prisma
+COPY prisma.config.ts ./
 RUN npx prisma generate --schema=./src/prisma/schema.prisma
 
 COPY dist ./dist

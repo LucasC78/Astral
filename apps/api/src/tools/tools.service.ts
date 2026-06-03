@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Tool } from '@prisma/client';
+import { Prisma, Tool } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { MeiliService } from '../meili/meili.service';
@@ -12,6 +12,17 @@ import { CreateToolDto } from './dto/create-tool.dto';
 import { UpdateToolDto } from './dto/update-tool.dto';
 import { ListToolsQuery } from './dto/list-tools.query';
 
+const toolInclude = {
+  primaryUrl: true,
+  primaryImage: true,
+  urls: true,
+  images: true,
+} satisfies Prisma.ToolInclude;
+
+type ToolWithAssets = Prisma.ToolGetPayload<{
+  include: typeof toolInclude;
+}>;
+
 @Injectable()
 export class ToolsService {
   constructor(
@@ -19,7 +30,6 @@ export class ToolsService {
     private readonly meili: MeiliService,
   ) {}
 
-  // GET /tools?q=&limit=&offset=
   async list(query: ListToolsQuery) {
     const limit = Math.min(query.limit ?? 20, 100);
     const offset = query.offset ?? 0;
@@ -33,7 +43,6 @@ export class ToolsService {
               { description: { contains: q, mode: 'insensitive' as const } },
               { category: { contains: q, mode: 'insensitive' as const } },
               { countryCode: { contains: q, mode: 'insensitive' as const } },
-              // tags is String[] in Postgres (Prisma): match exact tag value
               { tags: { has: q.toLowerCase() } as any },
             ],
           }
@@ -45,19 +54,19 @@ export class ToolsService {
         take: limit,
         skip: offset,
         orderBy: { createdAt: 'desc' },
+        include: toolInclude,
       }),
       this.prisma.tool.count({ where }),
     ]);
 
     return {
-      items,
+      items: items.map((tool) => this.toApiTool(tool)),
       limit,
       offset,
       total,
     };
   }
 
-  // GET /tools/:slug
   async getBySlug(slug: string) {
     const normalizedSlug = String(slug ?? '')
       .trim()
@@ -65,18 +74,20 @@ export class ToolsService {
 
     const tool = await this.prisma.tool.findUnique({
       where: { slug: normalizedSlug },
+      include: toolInclude,
     });
 
     if (!tool) throw new NotFoundException('Tool introuvable');
-    return tool;
+
+    return this.toApiTool(tool);
   }
 
-  // POST /tools
   async create(dto: CreateToolDto) {
     const slug = dto.slug.trim().toLowerCase();
 
     const tags = this.normalizeTags(dto.tags);
     const logoUrl = dto.logoUrl?.trim() || null;
+    const websiteUrl = dto.websiteUrl.trim();
 
     try {
       const created = await this.prisma.tool.create({
@@ -84,22 +95,56 @@ export class ToolsService {
           slug,
           name: dto.name.trim(),
           description: dto.description.trim(),
-          websiteUrl: dto.websiteUrl.trim(),
+          websiteUrl,
           countryCode: dto.countryCode.trim().toUpperCase(),
           category: dto.category.trim(),
           hostingRegion: dto.hostingRegion.trim(),
           gdprLevel: dto.gdprLevel.trim(),
           isOpenSource: dto.isOpenSource ?? false,
-
-          // ✅ nouveaux champs
           logoUrl,
           tags,
         },
       });
 
-      await this.safeMeiliUpsert(created);
+      const toolUrl = await this.prisma.toolUrl.create({
+        data: {
+          toolId: created.id,
+          url: websiteUrl,
+          normalizedUrl: this.normalizeUrl(websiteUrl),
+          type: 'OFFICIAL_WEBSITE',
+          isPrimary: true,
+          isActive: true,
+          lastSeenAt: new Date(),
+        },
+      });
 
-      return created;
+      let toolImage: { id: number } | null = null;
+
+      if (logoUrl) {
+        toolImage = await this.prisma.toolImage.create({
+          data: {
+            toolId: created.id,
+            url: logoUrl,
+            normalizedUrl: this.normalizeUrl(logoUrl),
+            type: 'LOGO',
+            isPrimary: true,
+            lastSeenAt: new Date(),
+          },
+        });
+      }
+
+      const enriched = await this.prisma.tool.update({
+        where: { id: created.id },
+        data: {
+          primaryUrlId: toolUrl.id,
+          primaryImageId: toolImage?.id ?? null,
+        },
+        include: toolInclude,
+      });
+
+      await this.safeMeiliUpsert(enriched);
+
+      return this.toApiTool(enriched);
     } catch (e: any) {
       if (e?.code === 'P2002') {
         throw new ConflictException('slug déjà utilisé');
@@ -108,7 +153,6 @@ export class ToolsService {
     }
   }
 
-  // PATCH /tools/:slug (admin)
   async updateBySlug(slug: string, dto: UpdateToolDto) {
     const normalizedSlug = String(slug ?? '')
       .trim()
@@ -117,6 +161,7 @@ export class ToolsService {
     const existing = await this.prisma.tool.findUnique({
       where: { slug: normalizedSlug },
     });
+
     if (!existing) throw new NotFoundException('Tool introuvable');
 
     const data: Record<string, any> = {};
@@ -133,8 +178,6 @@ export class ToolsService {
       data.hostingRegion = dto.hostingRegion.trim();
     if (dto.gdprLevel !== undefined) data.gdprLevel = dto.gdprLevel.trim();
     if (dto.isOpenSource !== undefined) data.isOpenSource = dto.isOpenSource;
-
-    // ✅ nouveaux champs
     if (dto.logoUrl !== undefined) data.logoUrl = dto.logoUrl?.trim() || null;
     if (dto.tags !== undefined) data.tags = this.normalizeTags(dto.tags);
 
@@ -144,9 +187,87 @@ export class ToolsService {
         data,
       });
 
-      await this.safeMeiliUpsert(updated);
+      if (dto.websiteUrl !== undefined) {
+        const websiteUrl = dto.websiteUrl.trim();
 
-      return updated;
+        const toolUrl = await this.prisma.toolUrl.upsert({
+          where: {
+            toolId_normalizedUrl: {
+              toolId: updated.id,
+              normalizedUrl: this.normalizeUrl(websiteUrl),
+            },
+          },
+          update: {
+            url: websiteUrl,
+            type: 'OFFICIAL_WEBSITE',
+            isPrimary: true,
+            isActive: true,
+            lastSeenAt: new Date(),
+          },
+          create: {
+            toolId: updated.id,
+            url: websiteUrl,
+            normalizedUrl: this.normalizeUrl(websiteUrl),
+            type: 'OFFICIAL_WEBSITE',
+            isPrimary: true,
+            isActive: true,
+            lastSeenAt: new Date(),
+          },
+        });
+
+        await this.prisma.tool.update({
+          where: { id: updated.id },
+          data: { primaryUrlId: toolUrl.id },
+        });
+      }
+
+      if (dto.logoUrl !== undefined) {
+        const logoUrl = dto.logoUrl?.trim() || null;
+
+        if (logoUrl) {
+          const toolImage = await this.prisma.toolImage.upsert({
+            where: {
+              toolId_normalizedUrl: {
+                toolId: updated.id,
+                normalizedUrl: this.normalizeUrl(logoUrl),
+              },
+            },
+            update: {
+              url: logoUrl,
+              type: 'LOGO',
+              isPrimary: true,
+              lastSeenAt: new Date(),
+            },
+            create: {
+              toolId: updated.id,
+              url: logoUrl,
+              normalizedUrl: this.normalizeUrl(logoUrl),
+              type: 'LOGO',
+              isPrimary: true,
+              lastSeenAt: new Date(),
+            },
+          });
+
+          await this.prisma.tool.update({
+            where: { id: updated.id },
+            data: { primaryImageId: toolImage.id },
+          });
+        } else {
+          await this.prisma.tool.update({
+            where: { id: updated.id },
+            data: { primaryImageId: null },
+          });
+        }
+      }
+
+      const enriched = await this.prisma.tool.findUniqueOrThrow({
+        where: { id: updated.id },
+        include: toolInclude,
+      });
+
+      await this.safeMeiliUpsert(enriched);
+
+      return this.toApiTool(enriched);
     } catch (e: any) {
       if (e?.code === 'P2002') {
         throw new ConflictException('slug déjà utilisé');
@@ -155,7 +276,6 @@ export class ToolsService {
     }
   }
 
-  // DELETE /tools/:slug (admin)
   async deleteBySlug(slug: string) {
     const normalizedSlug = String(slug ?? '')
       .trim()
@@ -164,30 +284,26 @@ export class ToolsService {
     const existing = await this.prisma.tool.findUnique({
       where: { slug: normalizedSlug },
     });
+
     if (!existing) throw new NotFoundException('Tool introuvable');
 
     const deleted = await this.prisma.tool.delete({
       where: { slug: normalizedSlug },
     });
 
-    // best-effort Meili delete
     try {
       await this.meili.deleteTool(deleted.id);
-    } catch {
-      // no-op (tu veux éviter de casser l'API si Meili est down)
-    }
+    } catch {}
 
     return deleted;
   }
 
-  // utilisé par /admin/reindex
   async findAllForReindex() {
-    return this.prisma.tool.findMany({ orderBy: { createdAt: 'desc' } });
+    return this.prisma.tool.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: toolInclude,
+    });
   }
-
-  // -------------------------
-  // Helpers
-  // -------------------------
 
   private normalizeTags(tags?: string[]) {
     if (!Array.isArray(tags)) return [];
@@ -197,34 +313,46 @@ export class ToolsService {
       .slice(0, 20);
   }
 
-  private toMeiliDoc(t: Tool) {
+  private normalizeUrl(url: string) {
+    return url.trim().toLowerCase();
+  }
+
+  private toApiTool(t: ToolWithAssets) {
+    return {
+      ...t,
+      websiteUrl: t.primaryUrl?.url ?? t.websiteUrl,
+      logoUrl: t.primaryImage?.url ?? t.logoUrl ?? null,
+      urls: t.urls ?? [],
+      images: t.images ?? [],
+    };
+  }
+
+  private toMeiliDoc(t: Tool | ToolWithAssets) {
+    const primaryUrl = 'primaryUrl' in t ? t.primaryUrl : null;
+    const primaryImage = 'primaryImage' in t ? t.primaryImage : null;
+
     return {
       id: t.id,
       slug: t.slug,
       name: t.name,
       description: t.description,
-      websiteUrl: t.websiteUrl,
+      websiteUrl: primaryUrl?.url ?? t.websiteUrl,
       countryCode: t.countryCode,
       category: t.category,
       hostingRegion: t.hostingRegion,
       gdprLevel: t.gdprLevel,
       isOpenSource: t.isOpenSource,
-
-      // ✅ champs enrichis
-      logoUrl: t.logoUrl ?? null,
+      logoUrl: primaryImage?.url ?? t.logoUrl ?? null,
       tags: Array.isArray(t.tags) ? t.tags : [],
-
       createdAt: t.createdAt.toISOString(),
       updatedAt: t.updatedAt.toISOString(),
     };
   }
 
-  private async safeMeiliUpsert(tool: Tool) {
+  private async safeMeiliUpsert(tool: Tool | ToolWithAssets) {
     try {
       await this.meili.configureToolsIndex();
       await this.meili.indexTools([this.toMeiliDoc(tool)]);
-    } catch {
-      // no-op: tu veux préserver create/update même si Meili est down
-    }
+    } catch {}
   }
 }
