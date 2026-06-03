@@ -40,6 +40,8 @@ export class CrawlerService {
       const html = await this.fetchHtml(processingJob.url);
 
       const title = this.extractTitle(html);
+      const description = this.extractDescription(html);
+      const content = this.extractContent(html);
       const links = this.extractLinks(html, processingJob.url);
       const filteredLinks = this.filterUsefulLinks(
         links,
@@ -53,6 +55,14 @@ export class CrawlerService {
       let enqueuedJobs = 0;
 
       if (processingJob.toolId) {
+        await this.savePageContent(
+          processingJob.toolId,
+          processingJob.url,
+          title,
+          description,
+          content,
+        );
+
         savedUrls = await this.saveToolUrls(
           processingJob.toolId,
           filteredLinks,
@@ -319,6 +329,57 @@ export class CrawlerService {
     }
 
     return Array.from(images);
+  }
+
+  private extractDescription(html: string) {
+    const match = html.match(
+      /<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)["']/i,
+    );
+
+    return this.cleanText(match?.[1] ?? null);
+  }
+
+  private extractContent(html: string) {
+    const text = html
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    return text.slice(0, 50000);
+  }
+
+  private async savePageContent(
+    toolId: number,
+    url: string,
+    title: string | null,
+    description: string | null,
+    content: string | null,
+  ) {
+    const normalizedUrl = this.normalizeUrl(url);
+
+    await this.prisma.pageContent.upsert({
+      where: {
+        toolId_normalizedUrl: {
+          toolId,
+          normalizedUrl,
+        },
+      },
+      update: {
+        title,
+        description,
+        content,
+      },
+      create: {
+        toolId,
+        url,
+        normalizedUrl,
+        title,
+        description,
+        content,
+      },
+    });
   }
 
   private filterUsefulLinks(

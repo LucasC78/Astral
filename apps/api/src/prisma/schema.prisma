@@ -62,6 +62,7 @@ model Tool {
   urls         ToolUrl[]   @relation("ToolUrls")
   images       ToolImage[] @relation("ToolImages")
   crawlJobs    CrawlQueue[]
+  pageContents PageContent[]
 
   primaryUrl   ToolUrl?   @relation("PrimaryToolUrl", fields: [primaryUrlId], references: [id], onDelete: SetNull)
   primaryImage ToolImage? @relation("PrimaryToolImage", fields: [primaryImageId], references: [id], onDelete: SetNull)
@@ -137,4 +138,24 @@ model CrawlQueue {
   @@index([status, nextRunAt])
   @@index([toolId])
   @@index([domain])
+}
+
+model PageContent {
+  id            Int      @id @default(autoincrement())
+
+  toolId        Int
+  tool          Tool     @relation(fields: [toolId], references: [id], onDelete: Cascade)
+
+  url           String
+  normalizedUrl String
+
+  title         String?
+  description   String?
+  content       String?
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([toolId, normalizedUrl])
+  @@index([toolId])
 }
