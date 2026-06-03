@@ -12,6 +12,7 @@ import { ToolsModule } from './tools/tools.module';
 import { MeiliModule } from './meili/meili.module';
 import { AdminModule } from './admin/admin.module';
 import { envValidationSchema } from './config/env.validation';
+import { CrawlerModule } from './crawler/crawler.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { envValidationSchema } from './config/env.validation';
     MeiliModule,
     ToolsModule,
     AdminModule,
+    CrawlerModule,
   ],
   controllers: [AppController, HealthController],
   providers: [
