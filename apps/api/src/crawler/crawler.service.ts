@@ -231,11 +231,16 @@ export class CrawlerService {
     urls: string[],
     currentDepth: number,
   ) {
-    if (currentDepth >= 1) return 0;
+    const maxDepth = Number(process.env.CRAWLER_MAX_DEPTH ?? 2);
+    const maxLinksPerPage = Number(
+      process.env.CRAWLER_MAX_LINKS_PER_PAGE ?? 30,
+    );
+
+    if (currentDepth >= maxDepth) return 0;
 
     let enqueued = 0;
 
-    for (const url of urls.slice(0, 20)) {
+    for (const url of urls.slice(0, maxLinksPerPage)) {
       const normalizedUrl = this.normalizeUrl(url);
 
       const existingJob = await this.prisma.crawlQueue.findFirst({
@@ -255,7 +260,7 @@ export class CrawlerService {
           domain: this.extractDomain(url),
           status: 'PENDING',
           jobType: 'DISCOVER',
-          priority: 0,
+          priority: Math.max(0, 10 - currentDepth),
           depth: currentDepth + 1,
           attempts: 0,
           nextRunAt: new Date(),
@@ -405,7 +410,17 @@ export class CrawlerService {
           pathname.includes('/login') ||
           pathname.includes('/signin') ||
           pathname.includes('/account') ||
-          pathname.includes('/cart')
+          pathname.includes('/cart') ||
+          pathname.includes('/legal') ||
+          pathname.includes('/privacy') ||
+          pathname.includes('/cookies') ||
+          pathname.includes('/terms') ||
+          pathname.includes('/press') ||
+          pathname.includes('/news') ||
+          pathname.includes('/events') ||
+          pathname.includes('/careers') ||
+          pathname.includes('/jobs') ||
+          pathname.includes('/contact')
         ) {
           return false;
         }
@@ -439,7 +454,38 @@ export class CrawlerService {
   }
 
   private normalizeUrl(url: string) {
-    return url.trim().toLowerCase().replace(/\/$/, '');
+    try {
+      const parsed = new URL(url.trim());
+
+      parsed.hash = '';
+
+      const paramsToRemove = [
+        'utm_source',
+        'utm_medium',
+        'utm_campaign',
+        'utm_term',
+        'utm_content',
+        'fbclid',
+        'gclid',
+        'msclkid',
+      ];
+
+      for (const param of paramsToRemove) {
+        parsed.searchParams.delete(param);
+      }
+
+      parsed.hostname = parsed.hostname.toLowerCase();
+
+      let normalized = parsed.toString();
+
+      if (normalized.endsWith('/')) {
+        normalized = normalized.slice(0, -1);
+      }
+
+      return normalized.toLowerCase();
+    } catch {
+      return url.trim().toLowerCase().replace(/\/$/, '');
+    }
   }
 
   private extractDomain(url: string) {
