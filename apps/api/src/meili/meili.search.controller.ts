@@ -147,6 +147,18 @@ export class MeiliSearchController {
     }
   }
 
+  @Get('search/pages')
+  async searchPages(@Query('q') q = '') {
+    await this.meili.health();
+
+    const res = await this.meili.searchPages(q, {
+      limit: 20,
+      offset: 0,
+    });
+
+    return { ...res, source: 'meili-pages' as const };
+  }
+
   @Get('facets/tools')
   async facetsTools() {
     await this.meili.health();

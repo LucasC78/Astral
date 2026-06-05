@@ -9,12 +9,14 @@ import {
 import { ToolsService } from '../tools/tools.service';
 import { MeiliService } from '../meili/meili.service';
 import { AdminKeyGuard } from './admin-key.guard';
+import { PrismaService } from '../prisma/prisma.service';
 
 @Controller('admin')
 export class AdminMeiliController {
   constructor(
     private readonly tools: ToolsService,
     private readonly meili: MeiliService,
+    private readonly prisma: PrismaService,
   ) {}
 
   private toToolDocument(t: any) {
@@ -76,6 +78,83 @@ export class AdminMeiliController {
     return {
       reset,
       index: this.meili.getToolsIndexName(),
+      count: documents.length,
+      task,
+    };
+  }
+
+  private toPageDocument(page: any) {
+    return {
+      id: page.id,
+      toolId: page.toolId,
+      url: page.url,
+      normalizedUrl: page.normalizedUrl,
+      title: page.title,
+      description: page.description,
+      content: page.content,
+
+      toolName: page.tool?.name ?? null,
+      toolSlug: page.tool?.slug ?? null,
+      toolCategory: page.tool?.category ?? null,
+      toolCountryCode: page.tool?.countryCode ?? null,
+      toolTags: Array.isArray(page.tool?.tags) ? page.tool.tags : [],
+
+      createdAt: page.createdAt.toISOString(),
+      updatedAt: page.updatedAt.toISOString(),
+    };
+  }
+
+  @Post('reindex/pages')
+  @UseGuards(AdminKeyGuard)
+  async reindexPages() {
+    await this.meili.health();
+    await this.meili.configurePagesIndex();
+
+    const pages = await this.prisma.pageContent.findMany({
+      include: {
+        tool: true,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    const documents = pages.map((p) => this.toPageDocument(p));
+
+    const task = await this.meili.indexPages(documents);
+
+    return {
+      index: 'pages',
+      count: documents.length,
+      task,
+    };
+  }
+
+  @Post('reindex/pages/reset')
+  @UseGuards(AdminKeyGuard)
+  async resetAndReindexPages() {
+    await this.meili.health();
+
+    const reset = await this.meili.resetPagesIndex();
+
+    await this.meili.configurePagesIndex(true);
+
+    const pages = await this.prisma.pageContent.findMany({
+      include: {
+        tool: true,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    const documents = pages.map((p) => this.toPageDocument(p));
+
+    const task = await this.meili.indexPages(documents);
+
+    return {
+      reset,
+      index: 'pages',
       count: documents.length,
       task,
     };

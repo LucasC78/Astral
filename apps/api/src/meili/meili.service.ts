@@ -8,13 +8,16 @@ export class MeiliService {
   private readonly host: string;
   private readonly apiKey?: string;
   private readonly toolsIndex: string;
+  private readonly pagesIndex: string;
 
   private toolsIndexConfigured = false;
+  private pagesIndexConfigured = false;
 
   constructor() {
     this.host = (process.env.MEILI_HOST || 'http://localhost:7700').trim();
     this.apiKey = process.env.MEILI_API_KEY?.trim() || undefined;
     this.toolsIndex = (process.env.MEILI_INDEX_TOOLS || 'tools').trim();
+    this.pagesIndex = (process.env.MEILI_INDEX_PAGES || 'pages').trim();
 
     this.client = new MeiliSearch({
       host: this.host,
@@ -26,8 +29,16 @@ export class MeiliService {
     return this.toolsIndex;
   }
 
+  getPagesIndexName() {
+    return this.pagesIndex;
+  }
+
   private toolsIndexHandle() {
     return this.client.index(this.toolsIndex);
+  }
+
+  private pagesIndexHandle() {
+    return this.client.index(this.pagesIndex);
   }
 
   async health() {
@@ -172,6 +183,105 @@ export class MeiliService {
 
       console.error('[Meili] resetToolsIndex error:', e);
       throw new ServiceUnavailableException('Reset Meili impossible');
+    }
+  }
+
+  async configurePagesIndex(force = false) {
+    if (this.pagesIndexConfigured && !force) return;
+
+    try {
+      const index = this.pagesIndexHandle();
+
+      await index.updateSearchableAttributes([
+        'title',
+        'description',
+        'content',
+        'url',
+        'toolName',
+        'toolSlug',
+        'toolCategory',
+        'toolCountryCode',
+        'toolTags',
+      ]);
+
+      await index.updateFilterableAttributes([
+        'toolId',
+        'toolSlug',
+        'toolCategory',
+        'toolCountryCode',
+        'toolTags',
+      ]);
+
+      await index.updateSortableAttributes(['createdAt', 'updatedAt', 'title']);
+
+      this.pagesIndexConfigured = true;
+    } catch (e) {
+      console.error('[Meili] configurePagesIndex error:', e);
+      throw new ServiceUnavailableException(
+        'Configuration Meili pages impossible',
+      );
+    }
+  }
+
+  async indexPages(documents: Array<Record<string, any>>) {
+    try {
+      const index = this.pagesIndexHandle();
+      return await index.addDocuments(documents, { primaryKey: 'id' });
+    } catch (e) {
+      console.error('[Meili] indexPages error:', e);
+      throw new ServiceUnavailableException(
+        'Indexation Meili pages impossible',
+      );
+    }
+  }
+
+  async searchPages(
+    q: string,
+    options?: {
+      limit?: number;
+      offset?: number;
+      filter?: string[];
+      sort?: string;
+    },
+  ) {
+    try {
+      const index = this.pagesIndexHandle();
+
+      return await index.search(q, {
+        limit: options?.limit ?? 20,
+        offset: options?.offset ?? 0,
+        filter: options?.filter,
+        sort: options?.sort ? [options.sort] : undefined,
+      });
+    } catch (e) {
+      console.error('[Meili] searchPages error:', e);
+      throw new ServiceUnavailableException('Recherche Meili pages impossible');
+    }
+  }
+
+  async resetPagesIndex() {
+    try {
+      await this.client.deleteIndex(this.pagesIndex);
+      this.pagesIndexConfigured = false;
+
+      return {
+        index: this.pagesIndex,
+        deleted: true,
+      };
+    } catch (e: any) {
+      const msg = String(e?.message ?? '').toLowerCase();
+
+      if (msg.includes('index') && msg.includes('not found')) {
+        this.pagesIndexConfigured = false;
+
+        return {
+          index: this.pagesIndex,
+          deleted: false,
+        };
+      }
+
+      console.error('[Meili] resetPagesIndex error:', e);
+      throw new ServiceUnavailableException('Reset Meili pages impossible');
     }
   }
 
