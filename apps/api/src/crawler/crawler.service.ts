@@ -516,6 +516,21 @@ export class CrawlerService {
         if (allowedDomain && hostname !== allowedDomain) return false;
 
         if (
+          pathname.endsWith('.xml') ||
+          pathname.endsWith('.rss') ||
+          pathname.endsWith('.pdf') ||
+          pathname.endsWith('.jpg') ||
+          pathname.endsWith('.jpeg') ||
+          pathname.endsWith('.png') ||
+          pathname.endsWith('.svg') ||
+          pathname.endsWith('.webp') ||
+          pathname.includes('/rss') ||
+          pathname.includes('rss.xml')
+        ) {
+          return false;
+        }
+
+        if (
           url.includes('/auth') ||
           url.includes('/billing') ||
           url.includes('/support') ||
