@@ -148,15 +148,42 @@ export class MeiliSearchController {
   }
 
   @Get('search/pages')
-  async searchPages(@Query('q') q = '') {
+  async searchPages(
+    @Query('q') q = '',
+    @Query('limit') limitParam?: string,
+    @Query('offset') offsetParam?: string,
+  ) {
     await this.meili.health();
 
+    const limit = Math.min(Number(limitParam ?? 20), 50);
+    const offset = Number(offsetParam ?? 0);
+
     const res = await this.meili.searchPages(q, {
-      limit: 20,
-      offset: 0,
+      limit,
+      offset,
     });
 
-    return { ...res, source: 'meili-pages' as const };
+    return {
+      query: q,
+      limit,
+      offset,
+      estimatedTotalHits: res.estimatedTotalHits,
+      processingTimeMs: res.processingTimeMs,
+      source: 'meili-pages' as const,
+      hits: res.hits.map((hit: any) => ({
+        id: hit.id,
+        title: hit.title,
+        url: hit.url,
+        snippet: String(hit.description || hit.content || '').slice(0, 300),
+        toolId: hit.toolId,
+        toolName: hit.toolName,
+        toolSlug: hit.toolSlug,
+        toolCategory: hit.toolCategory,
+        toolCountryCode: hit.toolCountryCode,
+        createdAt: hit.createdAt,
+        updatedAt: hit.updatedAt,
+      })),
+    };
   }
 
   @Get('facets/tools')
