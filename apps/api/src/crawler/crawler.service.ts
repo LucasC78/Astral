@@ -291,6 +291,11 @@ export class CrawlerService {
     }
 
     const contentType = res.headers.get('content-type') ?? '';
+    const contentLength = Number(res.headers.get('content-length') ?? 0);
+
+    if (contentLength > 3_000_000) {
+      throw new Error(`HTML too large: ${contentLength}`);
+    }
 
     if (!contentType.includes('text/html')) {
       throw new Error(`Unsupported content-type: ${contentType}`);
