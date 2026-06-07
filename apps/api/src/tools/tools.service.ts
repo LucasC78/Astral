@@ -141,6 +141,20 @@ export class ToolsService {
         },
         include: toolInclude,
       });
+      await this.prisma.crawlQueue.create({
+        data: {
+          toolId: created.id,
+          url: websiteUrl,
+          normalizedUrl: this.normalizeUrl(websiteUrl),
+          domain: new URL(websiteUrl).hostname,
+          status: 'PENDING',
+          jobType: 'DISCOVER',
+          priority: 10,
+          depth: 0,
+          attempts: 0,
+          nextRunAt: new Date(),
+        },
+      });
 
       await this.safeMeiliUpsert(enriched);
 

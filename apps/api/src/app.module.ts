@@ -13,9 +13,11 @@ import { MeiliModule } from './meili/meili.module';
 import { AdminModule } from './admin/admin.module';
 import { envValidationSchema } from './config/env.validation';
 import { CrawlerModule } from './crawler/crawler.module';
+import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
   imports: [
+    ScheduleModule.forRoot(),
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',

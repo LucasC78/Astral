@@ -1,10 +1,14 @@
 import { Injectable } from '@nestjs/common';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { MeiliService } from '../meili/meili.service';
 
 @Injectable()
 export class CrawlerService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly meili: MeiliService,
+  ) {}
 
   async runOneJob() {
     const job = await this.prisma.crawlQueue.findFirst({
@@ -364,7 +368,7 @@ export class CrawlerService {
   ) {
     const normalizedUrl = this.normalizeUrl(url);
 
-    await this.prisma.pageContent.upsert({
+    const page = await this.prisma.pageContent.upsert({
       where: {
         toolId_normalizedUrl: {
           toolId,
@@ -384,7 +388,37 @@ export class CrawlerService {
         description,
         content,
       },
+      include: {
+        tool: true,
+      },
     });
+
+    try {
+      await this.meili.configurePagesIndex();
+
+      await this.meili.indexPages([
+        {
+          id: page.id,
+          toolId: page.toolId,
+          url: page.url,
+          normalizedUrl: page.normalizedUrl,
+          title: page.title,
+          description: page.description,
+          content: page.content,
+
+          toolName: page.tool?.name ?? null,
+          toolSlug: page.tool?.slug ?? null,
+          toolCategory: page.tool?.category ?? null,
+          toolCountryCode: page.tool?.countryCode ?? null,
+          toolTags: Array.isArray(page.tool?.tags) ? page.tool.tags : [],
+
+          createdAt: page.createdAt.toISOString(),
+          updatedAt: page.updatedAt.toISOString(),
+        },
+      ]);
+    } catch (e) {
+      console.error('[Crawler] Auto-index page failed:', e);
+    }
   }
 
   private filterUsefulLinks(
@@ -420,6 +454,12 @@ export class CrawlerService {
           pathname.includes('/events') ||
           pathname.includes('/careers') ||
           pathname.includes('/jobs') ||
+          pathname.includes('/blog') ||
+          pathname.includes('/events') ||
+          pathname.includes('/vivatech') ||
+          pathname.includes('/webinars') ||
+          pathname.includes('/press') ||
+          pathname.includes('/news') ||
           pathname.includes('/contact')
         ) {
           return false;
