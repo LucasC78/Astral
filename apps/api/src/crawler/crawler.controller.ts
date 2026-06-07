@@ -11,6 +11,11 @@ export class CrawlerController {
     return this.crawlerService.listJobs();
   }
 
+  @Get('stats')
+  async getStats() {
+    return this.crawlerService.getStats();
+  }
+
   @Post('run-one')
   async runOneJob() {
     return this.crawlerService.runOneJob();

@@ -155,6 +155,80 @@ export class CrawlerService {
     });
   }
 
+  async getStats() {
+    const [queueByStatusAndDepth, pagesByTool, failedJobs] = await Promise.all([
+      this.prisma.crawlQueue.groupBy({
+        by: ['status', 'depth'],
+        _count: {
+          _all: true,
+        },
+        orderBy: [{ depth: 'asc' }, { status: 'asc' }],
+      }),
+
+      this.prisma.pageContent.groupBy({
+        by: ['toolId'],
+        _count: {
+          _all: true,
+        },
+        orderBy: {
+          _count: {
+            toolId: 'desc',
+          },
+        },
+      }),
+
+      this.prisma.crawlQueue.findMany({
+        where: {
+          status: 'FAILED',
+        },
+        select: {
+          id: true,
+          toolId: true,
+          url: true,
+          depth: true,
+          attempts: true,
+          lastError: true,
+          updatedAt: true,
+        },
+        orderBy: {
+          updatedAt: 'desc',
+        },
+        take: 20,
+      }),
+    ]);
+
+    const tools = await this.prisma.tool.findMany({
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+      },
+    });
+
+    const toolById = new Map(tools.map((tool) => [tool.id, tool]));
+
+    return {
+      queueByStatusAndDepth: queueByStatusAndDepth.map((item) => ({
+        status: item.status,
+        depth: item.depth,
+        count: item._count._all,
+      })),
+
+      pagesByTool: pagesByTool.map((item) => {
+        const tool = toolById.get(item.toolId);
+
+        return {
+          toolId: item.toolId,
+          toolName: tool?.name ?? null,
+          toolSlug: tool?.slug ?? null,
+          count: item._count._all,
+        };
+      }),
+
+      failedJobs,
+    };
+  }
+
   private async saveToolUrls(toolId: number, urls: string[]) {
     let saved = 0;
 
